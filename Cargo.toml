@@ -7,8 +7,13 @@ edition = "2021"
 approx = "0.5.1"
 apriltag = "0.4.0"
 assert_approx_eq = "1.1.0"
+image = "0.25.5"
+nalgebra = "0.33.2"
 
 [dependencies.nokhwa]
 version = "0.10.0"
-# Use the native input backends, enable WGPU integration
 features = ["input-native", "output-threaded"]
+
+[dependencies.apriltag-image]
+version = "0.1.0"
+path = "../apriltag-image"
