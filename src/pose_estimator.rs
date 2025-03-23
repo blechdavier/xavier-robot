@@ -26,7 +26,7 @@ impl<T: WheelOdometry<U>, U> PoseEstimator<T, U> {
         }
     }
 
-    pub fn update(&mut self, gyro_angle_radians: f64, wheel_positions: U) {
+    pub fn update(&mut self, gyro_angle_radians: f64, wheel_positions: &U) {
         self.odometry.update(gyro_angle_radians, wheel_positions);
         let time = SystemTime::now()
             .duration_since(UNIX_EPOCH)

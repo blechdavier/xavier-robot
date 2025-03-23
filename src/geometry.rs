@@ -95,6 +95,7 @@ pub struct Twist2d {
 }
 
 impl Twist2d {
+    pub const ZERO: Self = Self {dx: 0.0, dy: 0.0, dtheta: 0.0};
     pub const fn new(dx: f64, dy: f64, dtheta: f64) -> Self {
         Twist2d { dx, dy, dtheta }
     }

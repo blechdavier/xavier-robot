@@ -3,7 +3,7 @@ use std::f64::consts::PI;
 use crate::geometry::{Transform2d, Twist2d};
 
 pub trait WheelOdometry<WheelPositions> {
-    fn update(&mut self, gyro_angle_radians: f64, wheel_positions: WheelPositions);
+    fn update(&mut self, gyro_angle_radians: f64, wheel_positions: &WheelPositions);
     fn get_pose(&self) -> &Transform2d;
     fn reset_pose(
         &mut self,
@@ -39,18 +39,19 @@ impl WheelOdometry<DifferentialDriveWheelPositions> for DifferentialDriveOdometr
     fn update(
         &mut self,
         gyro_angle_radians: f64,
-        wheel_positions: DifferentialDriveWheelPositions,
+        wheel_positions: &DifferentialDriveWheelPositions,
     ) {
         let angle = gyro_angle_radians - self.gyro_offset_radians;
 
         let l = wheel_positions.left_wheel_meters - self.prev_wheel_positions.left_wheel_meters;
         let r = wheel_positions.right_wheel_meters - self.prev_wheel_positions.right_wheel_meters;
 
-        // let twist = Twist2d::new((l + r) / 2.0, 0.0, (r - l) * self.wheel_separation_meters); // IF NO GYRO
-        let twist = Twist2d::new((l + r) / 2.0, 0.0, angle - self.prev_angle_radians);
+        let twist = Twist2d::new((l + r) / 2.0, 0.0, (r - l) / self.wheel_separation_meters); // IF NO GYRO
+        // let twist = Twist2d::new((l + r) / 2.0, 0.0, angle - self.prev_angle_radians);
         self.pose += Transform2d::from(twist);
 
-        self.prev_wheel_positions = wheel_positions;
+        self.prev_wheel_positions.left_wheel_meters = wheel_positions.left_wheel_meters;
+        self.prev_wheel_positions.right_wheel_meters = wheel_positions.right_wheel_meters;
         self.prev_angle_radians = angle;
     }
 
@@ -100,7 +101,7 @@ fn test_odom_forward() {
     );
     odom.update(
         0.0,
-        DifferentialDriveWheelPositions {
+        &DifferentialDriveWheelPositions {
             left_wheel_meters: 1.0,
             right_wheel_meters: 1.0,
         },
@@ -120,7 +121,7 @@ fn test_odom_quarter_turn() {
     );
     odom.update(
         PI / 2.0,
-        DifferentialDriveWheelPositions {
+        &DifferentialDriveWheelPositions {
             left_wheel_meters: PI / 2.0,
             right_wheel_meters: PI / 2.0,
         },
@@ -140,7 +141,7 @@ fn test_odom_semicircle() {
     );
     odom.update(
         PI,
-        DifferentialDriveWheelPositions {
+        &DifferentialDriveWheelPositions {
             left_wheel_meters: 1.0,
             right_wheel_meters: 1.0,
         },
@@ -160,7 +161,7 @@ fn test_odom_circle() {
     );
     odom.update(
         2.0 * PI,
-        DifferentialDriveWheelPositions {
+        &DifferentialDriveWheelPositions {
             left_wheel_meters: 1.0,
             right_wheel_meters: 1.0,
         },
@@ -180,21 +181,21 @@ fn test_odom_full() {
     );
     odom.update(
         0.0,
-        DifferentialDriveWheelPositions {
+        &DifferentialDriveWheelPositions {
             left_wheel_meters: -2.0,
             right_wheel_meters: -2.0,
         },
     );
     odom.update(
         0.0,
-        DifferentialDriveWheelPositions {
+        &DifferentialDriveWheelPositions {
             left_wheel_meters: 3.0,
             right_wheel_meters: 3.0,
         },
     );
     odom.update(
         PI / 2.0,
-        DifferentialDriveWheelPositions {
+        &DifferentialDriveWheelPositions {
             left_wheel_meters: 3.0 + PI / 2.0,
             right_wheel_meters: 3.0 + PI / 2.0,
         },
@@ -214,7 +215,7 @@ fn test_reset_pose() {
     );
     odom.update(
         PI / 2.0,
-        DifferentialDriveWheelPositions {
+        &DifferentialDriveWheelPositions {
             left_wheel_meters: 19.0 + PI / 2.0,
             right_wheel_meters: 80.0 + PI / 2.0,
         },
@@ -230,7 +231,7 @@ fn test_reset_pose() {
     assert_eq!(odom.get_pose().clone(), Transform2d::new(5.0, 1.0, 0.0));
     odom.update(
         0.0,
-        DifferentialDriveWheelPositions {
+        &DifferentialDriveWheelPositions {
             left_wheel_meters: 19.0 + PI / 2.0,
             right_wheel_meters: 80.0 + PI / 2.0,
         },
