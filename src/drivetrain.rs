@@ -23,7 +23,7 @@ pub trait Drivetrain<T> {
 
 impl Drivetrain<DifferentialDriveWheelPositions> for XavierBotDrivetrain {
     fn update_inputs(&mut self) {
-        while self.arduino.bytes_to_read().unwrap() > 12 {
+        while self.arduino.bytes_to_read().unwrap() >= 12 {
             let mut buf = [0; 12];
             self.arduino.read_exact(&mut buf).unwrap();
             // dbg!(buf);
@@ -37,8 +37,16 @@ impl Drivetrain<DifferentialDriveWheelPositions> for XavierBotDrivetrain {
     }
     fn write_outputs(&mut self) {
         // let diff = self.desired_chassis_speeds.dtheta * XAVIERBOT_WHEEL_SEPARATION_METERS / 2.0;
-        let left_mps = -self.heading;
-        let right_mps = self.heading;
+        let mut left_mps = -self.heading;
+        let mut right_mps = self.heading;
+
+        let norm: f64 = left_mps.abs().max(right_mps.abs()) / XAVIERBOT_MAX_SPEED_FEASIBLE;
+        if norm > 1.0 {
+            // desaturate wheel speeds
+            left_mps /= norm;
+            right_mps /= norm;
+        }
+        dbg!(left_mps, right_mps);
         let left_encoder_clicks_per_sec = (left_mps / XAVIERBOT_METERS_PER_ENCODER_CLICK) as f32;
         let right_encoder_clicks_per_sec = -(right_mps / XAVIERBOT_METERS_PER_ENCODER_CLICK) as f32;
         self.arduino.write(&[0]).unwrap(); // 0: send wheel velocities
