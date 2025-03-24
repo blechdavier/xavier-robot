@@ -5,7 +5,7 @@ mod pose_estimator;
 mod utils;
 mod drivetrain;
 
-use std::{thread, time::{Duration, Instant}};
+use std::{thread, time::{Duration, Instant, SystemTime, UNIX_EPOCH}};
 
 use cameras::AprilTagCamera;
 use drivetrain::{Drivetrain, XavierBotDrivetrain, XAVIERBOT_WHEEL_SEPARATION_METERS};
@@ -14,7 +14,7 @@ use nokhwa::{nokhwa_initialize, utils::Resolution};
 use odometry::{DifferentialDriveOdometry, DifferentialDriveWheelPositions};
 use pose_estimator::PoseEstimator;
 
-const DURATION_PER_FRAME: Duration = Duration::from_millis(40);
+const DURATION_PER_FRAME: Duration = Duration::from_millis(10);
 
 fn main() {
     if cfg!(target_os = "macos") {
@@ -27,16 +27,21 @@ fn main() {
     let mut drivetrain = XavierBotDrivetrain::new("/dev/ttyACM0");
     let odom = DifferentialDriveOdometry::new(XAVIERBOT_WHEEL_SEPARATION_METERS, 0.0, DifferentialDriveWheelPositions::ZERO);
     let mut pose_estimator = PoseEstimator::new(Transform2d::ZERO, odom);
+
+    drivetrain.reset_serial_odom_alignment();
+    drivetrain.set_kp(0.6);
+    
     let mut prev_frame = Instant::now();
 
     loop {
         drivetrain.update_inputs();
-        dbg!(&drivetrain.wheel_positions);
-        pose_estimator.update(0.0, &drivetrain.wheel_positions);
-        dbg!(pose_estimator.get_estimated_pose());
+        dbg!(&drivetrain.heading);
+        pose_estimator.update(drivetrain.heading, &drivetrain.wheel_positions);
+        // dbg!(pose_estimator.get_estimated_pose());
+        drivetrain.write_outputs();
         // if let Ok(update) = cam.rx.try_recv() {
         //     if !update.tags.is_empty() {
-        //         dbg!(update);
+        //         println!("vision pipeline latency is {:?}.", SystemTime::now().duration_since(UNIX_EPOCH).unwrap() - Duration::from_secs_f64(update.timestamp));
         //         // pose_estimator.add_vision_measurement(estimated_pose, update.timestamp, std_x, std_y, std_theta); // TODO
         //     }
         // }
