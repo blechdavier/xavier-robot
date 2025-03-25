@@ -1,6 +1,6 @@
-use std::{f64::consts::PI, time::Duration};
+use std::{f64::consts::PI, thread, time::Duration};
 
-use serialport::SerialPort;
+use serialport::{ClearBuffer, SerialPort};
 
 use crate::{geometry::Twist2d, odometry::DifferentialDriveWheelPositions};
 
@@ -23,9 +23,7 @@ pub trait Drivetrain<T> {
 
 impl Drivetrain<DifferentialDriveWheelPositions> for XavierBotDrivetrain {
     fn update_inputs(&mut self) {
-        // dbg!(self.arduino.bytes_to_read().unwrap());
         while self.arduino.bytes_to_read().unwrap() > 8 {
-            dbg!("letsgo");
             let mut buf = [0; 8];
             self.arduino.read_exact(&mut buf).unwrap();
             let left_encoder = i32::from_le_bytes(buf[0..4].try_into().unwrap());
@@ -46,5 +44,12 @@ impl XavierBotDrivetrain {
         .timeout(Duration::from_millis(10))
         .open().expect("Failed to open port");
         Self { arduino, desired_chassis_speeds: Twist2d::ZERO, heading: 0.0, wheel_positions: DifferentialDriveWheelPositions::ZERO }
+    }
+
+    pub fn reset_serial_odom_alignment(&mut self) {
+        self.arduino.write(&[2]).unwrap(); // 2: disable odometry sending
+        thread::sleep(Duration::from_millis(500));
+        self.arduino.clear(ClearBuffer::Input).unwrap();
+        self.arduino.write(&[1]).unwrap(); // 1: enable odometry sending
     }
 }

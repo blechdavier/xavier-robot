@@ -7,6 +7,7 @@ mod drivetrain;
 
 use std::{thread, time::{Duration, Instant}};
 
+use apriltag::TagParams;
 use cameras::AprilTagCamera;
 use drivetrain::{Drivetrain, XavierBotDrivetrain, XAVIERBOT_WHEEL_SEPARATION_METERS};
 use geometry::Transform2d;
@@ -14,7 +15,7 @@ use nokhwa::{nokhwa_initialize, utils::Resolution};
 use odometry::{DifferentialDriveOdometry, DifferentialDriveWheelPositions};
 use pose_estimator::PoseEstimator;
 
-const DURATION_PER_FRAME: Duration = Duration::from_millis(40);
+const DURATION_PER_FRAME: Duration = Duration::from_millis(100);
 
 fn main() {
     if cfg!(target_os = "macos") {
@@ -23,17 +24,19 @@ fn main() {
         });
     }
 
-    // let cam = AprilTagCamera::new("UVC Camera (046d:081b)", Resolution::new(640,480), 30);
-    let mut drivetrain = XavierBotDrivetrain::new("/dev/ttyACM0");
+    let cam = AprilTagCamera::new("UVC Camera (046d:081b)", Resolution::new(640,480), 30, TagParams{fx:805.53, fy:799.9, cx:319.42, cy:238.24, tagsize:0.1651});
+    // let mut drivetrain = XavierBotDrivetrain::new("/dev/ttyACM0");
     let odom = DifferentialDriveOdometry::new(XAVIERBOT_WHEEL_SEPARATION_METERS, 0.0, DifferentialDriveWheelPositions::ZERO);
     let mut pose_estimator = PoseEstimator::new(Transform2d::ZERO, odom);
     let mut prev_frame = Instant::now();
 
+    // drivetrain.reset_serial_odom_alignment();
+
     loop {
-        drivetrain.update_inputs();
-        dbg!(&drivetrain.wheel_positions);
-        pose_estimator.update(0.0, &drivetrain.wheel_positions);
-        dbg!(pose_estimator.get_estimated_pose());
+        // drivetrain.update_inputs();
+        // dbg!(&drivetrain.wheel_positions);
+        // pose_estimator.update(0.0, &drivetrain.wheel_positions);
+        // dbg!(pose_estimator.get_estimated_pose());
         // if let Ok(update) = cam.rx.try_recv() {
         //     if !update.tags.is_empty() {
         //         dbg!(update);

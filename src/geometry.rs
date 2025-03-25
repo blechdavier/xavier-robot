@@ -1,7 +1,10 @@
 use std::{
-    f64::consts::PI,
-    ops::{Add, AddAssign},
+    f64::consts::PI, fmt::Debug, ops::{Add, AddAssign}
 };
+
+use nalgebra::{Matrix3, Rotation3, Translation3, Vector3};
+
+use assert_approx_eq::assert_approx_eq;
 
 use crate::utils::Interpolate;
 
@@ -117,5 +120,70 @@ impl From<Twist2d> for Transform2d {
             twist.dx * c + twist.dy * s,
             twist.dtheta,
         )
+    }
+}
+
+#[derive(Clone)]
+pub struct Transform3d {
+    pub rotation: Rotation3<f64>,
+    pub translation: Vector3<f64>
+}
+
+impl Transform3d {
+    pub const fn new(rotation: Rotation3<f64>, translation: Vector3<f64>) -> Self {
+        Self { rotation, translation }
+    }
+
+    /// row-major order expected.
+    pub fn from_slices(rotation: &[f64; 9], translation: &[f64; 3]) -> Self {
+        let rotation_mat = Matrix3::from_row_slice(rotation);
+        assert!(rotation_mat.is_invertible());
+        assert_approx_eq!(rotation_mat.determinant(), 1.0);
+        let rotation = Rotation3::from_matrix_unchecked(rotation_mat);
+        Self {
+            rotation,
+            translation: Vector3::from_row_slice(translation)
+        }
+    }
+
+    pub fn inverse(&self) -> Self {
+        let rot_inv = self.rotation.inverse();
+        Self {
+            rotation: rot_inv,
+            translation: rot_inv * -self.translation
+        }
+    }
+
+    pub fn get_yaw(&self) -> f64 {
+        // self.rotation.
+        todo!()
+    }
+
+    pub fn to_transform_2d(&self) -> Transform2d {
+        Transform2d { x_meters: self.translation[0], y_meters: self.translation[1], theta_radians: self.get_yaw() }
+    }
+}
+
+impl Add for Transform3d {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self {
+            rotation: self.rotation * rhs.rotation,
+            translation: self.translation + self.rotation * rhs.translation,
+        } // TODO test this
+    }
+}
+
+impl Debug for Transform3d {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Transform3d").field("rotation (rpy)", &self.rotation.euler_angles()).field("translation", &self.translation).finish()
+    }
+}
+
+impl PartialEq for Transform3d {
+    fn eq(&self, other: &Self) -> bool {
+        self.rotation.matrix().iter().zip(other.rotation.matrix().iter()).all(|(a, b)| (a-b).abs() < 1e-6) &&
+        self.translation.iter().zip(other.translation.iter()).all(|(a, b)| (a-b).abs() < 1e-6)
     }
 }
