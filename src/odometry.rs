@@ -46,8 +46,8 @@ impl WheelOdometry<DifferentialDriveWheelPositions> for DifferentialDriveOdometr
         let l = wheel_positions.left_wheel_meters - self.prev_wheel_positions.left_wheel_meters;
         let r = wheel_positions.right_wheel_meters - self.prev_wheel_positions.right_wheel_meters;
 
-        let twist = Twist2d::new((l + r) / 2.0, 0.0, (r - l) / self.wheel_separation_meters); // IF NO GYRO
-        // let twist = Twist2d::new((l + r) / 2.0, 0.0, angle - self.prev_angle_radians);
+        // let twist = Twist2d::new((l + r) / 2.0, 0.0, (r - l) / self.wheel_separation_meters); // IF NO GYRO
+        let twist = Twist2d::new((l + r) / 2.0, 0.0, angle - self.prev_angle_radians);
         self.pose += Transform2d::from(twist);
 
         self.prev_wheel_positions.left_wheel_meters = wheel_positions.left_wheel_meters;
