@@ -5,12 +5,13 @@ mod pose_estimator;
 mod utils;
 mod drivetrain;
 
-use std::{thread, time::{Duration, Instant, SystemTime, UNIX_EPOCH}};
+use std::{f64::consts::PI, thread, time::{Duration, Instant, SystemTime, UNIX_EPOCH}};
 
 use apriltag::TagParams;
 use cameras::AprilTagCamera;
 use drivetrain::{Drivetrain, XavierBotDrivetrain, XAVIERBOT_WHEEL_SEPARATION_METERS};
-use geometry::Transform2d;
+use geometry::{Transform2d, Transform3d};
+use nalgebra::{Rotation3, Vector3};
 use nokhwa::{nokhwa_initialize, utils::Resolution};
 use odometry::{DifferentialDriveOdometry, DifferentialDriveWheelPositions};
 use pose_estimator::PoseEstimator;
@@ -24,8 +25,8 @@ fn main() {
         });
     }
 
-    let cam = AprilTagCamera::new("UVC Camera (046d:081b)", Resolution::new(640,480), 30, TagParams{fx:805.53, fy:799.9, cx:319.42, cy:238.24, tagsize:0.1651});
-    // let mut drivetrain = XavierBotDrivetrain::new("/dev/ttyACM0");
+    let cam = AprilTagCamera::new("UVC Camera (046d:081b)", Resolution::new(640,480), 30, TagParams {fx:805.53, fy:799.9, cx:319.42, cy:238.24, tagsize:0.1651}, Transform3d::new(Rotation3::from_euler_angles(0.0, -0.925, PI), Vector3::new(-0.093, 0.0, 0.078)));
+    let mut drivetrain = XavierBotDrivetrain::new("/dev/ttyACM0");
     let odom = DifferentialDriveOdometry::new(XAVIERBOT_WHEEL_SEPARATION_METERS, 0.0, DifferentialDriveWheelPositions::ZERO);
     let mut pose_estimator = PoseEstimator::new(Transform2d::ZERO, odom);
 
@@ -34,19 +35,18 @@ fn main() {
     
     let mut prev_frame = Instant::now();
 
-    // drivetrain.reset_serial_odom_alignment();
+    drivetrain.reset_serial_odom_alignment();
 
     loop {
-        // drivetrain.update_inputs();
-        // dbg!(&drivetrain.wheel_positions);
-        // pose_estimator.update(0.0, &drivetrain.wheel_positions);
-        // dbg!(pose_estimator.get_estimated_pose());
-        // if let Ok(update) = cam.rx.try_recv() {
-        //     if !update.tags.is_empty() {
-        //         println!("vision pipeline latency is {:?}.", SystemTime::now().duration_since(UNIX_EPOCH).unwrap() - Duration::from_secs_f64(update.timestamp));
-        //         // pose_estimator.add_vision_measurement(estimated_pose, update.timestamp, std_x, std_y, std_theta); // TODO
-        //     }
-        // }
+        drivetrain.update_inputs();
+        dbg!(&drivetrain.wheel_positions);
+        pose_estimator.update(0.0, &drivetrain.wheel_positions);
+        dbg!(pose_estimator.get_estimated_pose());
+        if let Ok(update) = cam.rx.try_recv() {
+            for tag_measurement in update.tags {
+                pose_estimator.add_vision_measurement(tag_measurement.world_to_robot.to_transform_2d(), update.timestamp, 0.02, 0.02, 0.3);
+            }
+        }
         if let Some(i) = DURATION_PER_FRAME.checked_sub(prev_frame.elapsed()) {
             thread::sleep(i);
         } else {

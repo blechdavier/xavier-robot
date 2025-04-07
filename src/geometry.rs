@@ -2,6 +2,7 @@ use std::{
     f64::consts::PI, fmt::Debug, ops::{Add, AddAssign}
 };
 
+use apriltag::Pose;
 use nalgebra::{Matrix3, Rotation3, Translation3, Vector3};
 
 use assert_approx_eq::assert_approx_eq;
@@ -177,7 +178,7 @@ impl Add for Transform3d {
 
 impl Debug for Transform3d {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Transform3d").field("rotation (rpy)", &self.rotation.euler_angles()).field("translation", &self.translation).finish()
+        f.debug_struct("Transform3d").field("rotation (matrix)", &self.rotation.matrix()).field("rotation (rpy)", &self.rotation.euler_angles()).field("inverse rotation (rpy)", &self.rotation.inverse().euler_angles()).field("translation", &self.translation).finish()
     }
 }
 
@@ -185,5 +186,16 @@ impl PartialEq for Transform3d {
     fn eq(&self, other: &Self) -> bool {
         self.rotation.matrix().iter().zip(other.rotation.matrix().iter()).all(|(a, b)| (a-b).abs() < 1e-6) &&
         self.translation.iter().zip(other.translation.iter()).all(|(a, b)| (a-b).abs() < 1e-6)
+    }
+}
+
+impl From<apriltag::Pose> for Transform3d {
+    fn from(pose: Pose) -> Self {
+        let a = Matrix3::new(0.0,-1.0,0.0,0.0,0.0,-1.0,1.0,0.0,0.0).try_inverse().unwrap();
+        let b = Matrix3::new(0.0,0.0,-1.0,1.0,0.0,0.0,0.0,1.0,0.0);
+        let c = Matrix3::new(0.0,-1.0,0.0,0.0,0.0,1.0,1.0,0.0,0.0);
+        let rotation_data = Matrix3::from_row_slice(pose.rotation().data());
+        let translation = Vector3::from_row_slice(pose.translation().data());
+        Self::new(Rotation3::from_matrix_unchecked(b * rotation_data * c), a * translation)
     }
 }
