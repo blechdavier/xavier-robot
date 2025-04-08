@@ -1,66 +1,66 @@
-use std::{
-    marker::PhantomData,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::{collections::BTreeMap, marker::PhantomData, time::Duration};
 
-use crate::{geometry::Transform2d, odometry::WheelOdometry, utils::TimeInterpolatableBuffer};
+use crate::{geometry::{Transform2d, Twist2d}, odometry::WheelOdometry, utils::{Interpolate, TimeInterpolatableBuffer}};
 
-const BUFFER_SIZE: f64 = 1.5; // seconds
+const BUFFER_SIZE: Duration = Duration::from_secs(2);
 
 pub struct PoseEstimator<T: WheelOdometry<U>, U> {
-    pose_estimate: Transform2d,
     odometry: T,
     odometry_buffer: TimeInterpolatableBuffer<Transform2d>,
-    vision_updates: Vec<()>, // TODO
+    world_to_odom: BTreeMap<Duration, Transform2d>,
     _marker: PhantomData<U>,
 }
 
 impl<T: WheelOdometry<U>, U> PoseEstimator<T, U> {
-    pub fn new(initial_pose: Transform2d, odometry: T) -> Self {
-        PoseEstimator {
-            pose_estimate: initial_pose,
+    pub fn new(world_to_robot: Transform2d, odometry: T, time_since_program_start: Duration) -> Self {
+        let mut res = PoseEstimator {
             odometry,
             odometry_buffer: TimeInterpolatableBuffer::new(BUFFER_SIZE),
-            vision_updates: Vec::new(),
+            world_to_odom: BTreeMap::new(),
             _marker: PhantomData::<U>,
-        }
+        };
+        res.odometry_buffer.add_sample(time_since_program_start, res.odometry.get_pose().clone());
+        res.reset_pose(world_to_robot, time_since_program_start);
+        res
     }
 
-    pub fn update(&mut self, gyro_angle_radians: f64, wheel_positions: &U) {
+    pub fn update_odometry(&mut self, gyro_angle_radians: f64, wheel_positions: &U, time_since_program_start: Duration) {
         self.odometry.update(gyro_angle_radians, wheel_positions);
-        let time = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs_f64();
         self.odometry_buffer
-            .add_sample(time, self.odometry.get_pose().clone());
-
-        if self.vision_updates.is_empty() {
-            self.pose_estimate = self.odometry.get_pose().clone();
-        }
-        // TODO update pose estimate
+            .add_sample(time_since_program_start, self.odometry.get_pose().clone());
     }
 
-    pub fn reset_pose(&mut self, pose: Transform2d, gyro_angle_radians: f64, wheel_positions: U) {
-        self.pose_estimate = pose.clone();
-        self.odometry
-            .reset_pose(gyro_angle_radians, wheel_positions, pose);
-        self.vision_updates.clear();
-        self.odometry_buffer.clear();
+    pub fn reset_pose(&mut self, world_to_robot: Transform2d, time_since_program_start: Duration) {
+        let odom_to_robot = self.odometry.get_pose().clone();
+        let robot_to_odom = -odom_to_robot;
+        let t_world_to_odom = world_to_robot + robot_to_odom;
+        if let Some((max_existing_timestamp, _)) = self.world_to_odom.last_key_value() {
+            // this could crash... maybe I should handle this undefined behavior in a better way.
+            assert!(*max_existing_timestamp < time_since_program_start, "tried to reset pose but there was already a more recent world_to_odom transform (maybe in the future somehow..?). Pose reset timestamp: {:?}. Max key in BTreeMap: {:?}", time_since_program_start, max_existing_timestamp);
+        }
+        self.world_to_odom.insert(time_since_program_start, t_world_to_odom);
     }
 
     pub fn add_vision_measurement(
         &mut self,
-        estimated_pose: Transform2d,
-        timestamp: f64,
+        world_to_vision_pose: Transform2d,
+        timestamp: Duration,
         std_x: f64,
         std_y: f64,
         std_theta: f64,
-    ) {
-        todo!()
+    ) -> Result<(),()> {
+        let world_to_estimated_pose = self.sample_at(timestamp)?;
+        let t = 0.1; // TODO actually do this statistically :)
+        let world_to_robot = Transform2d::interpolate(&world_to_estimated_pose, &world_to_vision_pose, t);
+        let odom_to_robot = self.odometry_buffer.get_value(timestamp).ok_or(())?;
+        let new_world_to_odom = world_to_robot + (-odom_to_robot);
+        self.world_to_odom.insert(timestamp, new_world_to_odom);
+        Ok(())
     }
 
-    pub fn get_estimated_pose(&self) -> &Transform2d {
-        &self.pose_estimate
+    pub fn sample_at(&self, timestamp: Duration) -> Result<Transform2d, ()> {
+        let odom_at_time = self.odometry_buffer.get_value(timestamp).ok_or(())?;
+        let previous_world_to_odom = self.world_to_odom.range(Duration::ZERO..=timestamp).last().ok_or(())?; // TODO this might be guaranteed to have a value & I can unwrap it???
+        Ok(previous_world_to_odom.1.clone() + odom_at_time)
     }
 }

@@ -1,4 +1,4 @@
-use std::{f64::consts::PI, sync::mpsc::{channel, Receiver}, time::{SystemTime, UNIX_EPOCH}};
+use std::{f64::consts::PI, sync::mpsc::{channel, Receiver}, time::{Duration, Instant}};
 
 use apriltag::{Detection, Detector, Family, Image, Pose, TagParams};
 use apriltag_image::ImageExt;
@@ -20,7 +20,7 @@ pub struct TagMeasurement {
 
 #[derive(Debug)]
 pub struct AprilTagCameraUpdate {
-    pub timestamp: f64,
+    pub timestamp: Duration,
     pub tags: Vec<TagMeasurement>
 }
 
@@ -36,7 +36,7 @@ const WORLD_TO_TAG: [Transform3d; 2] = [
 ];
 
 impl AprilTagCamera {
-    pub fn new(name: &str, res: Resolution, fps: u32, calibration: TagParams, robot_to_camera: Transform3d) -> Self {
+    pub fn new(name: &str, res: Resolution, fps: u32, calibration: TagParams, robot_to_camera: Transform3d, program_start: Instant) -> Self {
         let cameras = query(ApiBackend::Auto).unwrap();
         dbg!(&cameras);
         let camera_info = cameras.iter().find(|x| x.human_name() == name).unwrap();
@@ -44,7 +44,7 @@ impl AprilTagCamera {
 
         let (tx, rx) = channel::<AprilTagCameraUpdate>();
         let mut cam = CallbackCamera::new(camera_info.index().clone(), format, move |buffer| {
-            let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs_f64();
+            let timestamp = program_start.elapsed();
             let image_buffer = buffer.decode_image::<LumaFormat>().unwrap();
             let img = Image::from_image_buffer(&image_buffer);
             let mut detector = Detector::builder().add_family_bits(Family::tag_36h11(), 1).build().unwrap(); // TODO can I move this outside the thread?
@@ -57,7 +57,7 @@ impl AprilTagCamera {
                     let tag_to_camera = camera_to_tag.inverse();
                     let world_to_camera = world_to_tag + tag_to_camera;
                     let world_to_robot = world_to_camera + robot_to_camera.inverse();
-                    dbg!(&world_to_robot);
+                    // dbg!(&world_to_robot);
                     tags.push(TagMeasurement { id: detection.id(), corners: detection.corners(), world_to_robot });
                 }
             }
