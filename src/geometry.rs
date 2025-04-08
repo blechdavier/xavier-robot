@@ -1,5 +1,5 @@
 use std::{
-    f64::consts::PI, fmt::Debug, ops::{Add, AddAssign}
+    f64::consts::PI, fmt::Debug, ops::{Add, AddAssign, Neg}
 };
 
 use apriltag::Pose;
@@ -73,6 +73,14 @@ impl PartialEq for Transform2d {
     }
 }
 
+impl Neg for Transform2d {
+    type Output = Transform2d;
+
+    fn neg(self) -> Transform2d {
+        Transform2d::ZERO + Transform2d::new(0.0, 0.0, -self.theta_radians) + Transform2d::new(-self.x_meters, -self.y_meters, 0.0)
+    }
+}
+
 #[test]
 fn test_interpolate_transform2d() {
     let pose1 = Transform2d::new(0.0, 0.0, 0.0);
@@ -89,6 +97,14 @@ fn test_add_transform2d() {
         Transform2d::new(0.2, 1.2, PI / 2.0 + 1.0),
         initial + transform
     );
+}
+
+#[test]
+fn test_inverse_transform2d() {
+    let transform = Transform2d::new(1.0, 0.3, 1.0);
+    let inverse_transform = -transform.clone();
+    assert_eq!(transform.clone() + inverse_transform.clone(), Transform2d::ZERO);
+    assert_eq!(inverse_transform + transform, Transform2d::ZERO);
 }
 
 #[derive(Debug)]
