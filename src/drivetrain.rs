@@ -32,19 +32,24 @@ impl Drivetrain<DifferentialDriveWheelPositions> for XavierBotDrivetrain {
             let yaw = f32::from_le_bytes(buf[8..12].try_into().unwrap());
             self.wheel_positions.left_wheel_meters = left_encoder as f64 * XAVIERBOT_METERS_PER_ENCODER_CLICK;
             self.wheel_positions.right_wheel_meters = -(right_encoder as f64) * XAVIERBOT_METERS_PER_ENCODER_CLICK;
-            self.heading = yaw as f64;
+            self.heading = -yaw as f64;
         }
     }
     fn write_outputs(&mut self) {
-        // let diff = self.desired_chassis_speeds.dtheta * XAVIERBOT_WHEEL_SEPARATION_METERS / 2.0;
-        let mut left_mps = -self.heading;
-        let mut right_mps = self.heading;
+        let mut left_mps = self.desired_chassis_speeds.dx - XAVIERBOT_WHEEL_SEPARATION_METERS / 2.0 * self.desired_chassis_speeds.dtheta;
+        let mut right_mps = self.desired_chassis_speeds.dx + XAVIERBOT_WHEEL_SEPARATION_METERS / 2.0 * self.desired_chassis_speeds.dtheta;
 
         let norm: f64 = left_mps.abs().max(right_mps.abs()) / XAVIERBOT_MAX_SPEED_FEASIBLE;
         if norm > 1.0 {
             // desaturate wheel speeds
             left_mps /= norm;
             right_mps /= norm;
+        }
+        if left_mps.abs() < 0.02 {
+            left_mps = 0.0;
+        }
+        if right_mps.abs() < 0.02 {
+            right_mps = 0.0;
         }
         dbg!(left_mps, right_mps);
         let left_encoder_clicks_per_sec = (left_mps / XAVIERBOT_METERS_PER_ENCODER_CLICK) as f32;
