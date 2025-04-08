@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-approx = "0.5.1"
 apriltag = "0.4.0"
 assert_approx_eq = "1.1.0"
 image = "0.25.5"

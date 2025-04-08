@@ -2009,7 +2009,6 @@ dependencies = [
 name = "xavier-robot"
 version = "0.1.0"
 dependencies = [
- "approx",
  "apriltag",
  "apriltag-image",
  "assert_approx_eq",
