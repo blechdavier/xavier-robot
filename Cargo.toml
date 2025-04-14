@@ -8,6 +8,7 @@ apriltag = "0.4.0"
 assert_approx_eq = "1.1.0"
 image = "0.25.5"
 nalgebra = "0.33.2"
+nalgebra-sparse = "0.10.0"
 serialport = "4.7.0"
 
 [dependencies.nokhwa]

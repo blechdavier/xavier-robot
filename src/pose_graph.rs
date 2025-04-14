@@ -1,6 +1,7 @@
 use std::{f64::consts::PI, time::Instant};
 
 use nalgebra::{DMatrix, DVector, Matrix3, Vector3};
+use nalgebra_sparse::{factorization::CscCholesky, CooMatrix, CscMatrix};
 
 use crate::geometry::Transform2d;
 
@@ -38,7 +39,7 @@ impl PoseGraphBackend {
     pub fn optimize(&mut self, max_iterations: usize) {
         for _ in 0..max_iterations {
             let mut b: DVector<f64> = DVector::zeros(self.nodes.nrows());
-            let mut h: DMatrix<f64> = DMatrix::zeros(self.nodes.nrows(), self.nodes.nrows()); // TODO nalgebra_sparse... memory scales quadratically here (yikes)
+            let mut h: DMatrix<f64> = DMatrix::zeros(self.nodes.nrows(), self.nodes.nrows()); // TODO bench constructing using a sparse representation... would be better memory but could take more compute
             for edge in &self.edges {
                 let x_i = self.nodes.get(edge.i * 3).unwrap();
                 let y_i = self.nodes.get(edge.i * 3 + 1).unwrap();
@@ -93,12 +94,9 @@ impl PoseGraphBackend {
             let mut h_11 = h.view_mut((0, 0), (3, 3));
             h_11 += Matrix3::identity();
             // assert_eq!(&h, &h.transpose());
-            println!("----");
-            let start = Instant::now();
-            let decomp = h.cholesky().unwrap(); // FIXME error handling
-            dbg!(start.elapsed());
+            let h_csc: CscMatrix<f64> = (&h).into();
+            let decomp = CscCholesky::factor(&h_csc).unwrap();
             let delta_x = decomp.solve(&-b);
-            dbg!(start.elapsed());
             self.nodes += &delta_x;
             if delta_x.norm() < 1e-10 {
                 break;
@@ -125,8 +123,6 @@ fn test_optimize_pose_graph() {
     for element in pose_graph.nodes.iter_mut().skip(3) {
         *element += 1.0;
     }
-    let start = Instant::now();
     pose_graph.optimize(10);
-    panic!("{:?}", start.elapsed());
-    // assert!(pose_graph.nodes.relative_eq(&ground_truth, 1e-9, 1e-9));
+    assert!(pose_graph.nodes.relative_eq(&ground_truth, 1e-9, 1e-9));
 }
