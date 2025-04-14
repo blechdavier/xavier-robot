@@ -2,6 +2,7 @@ mod cameras;
 mod odometry;
 mod geometry;
 mod pose_estimator;
+mod pose_graph;
 mod utils;
 mod drivetrain;
 

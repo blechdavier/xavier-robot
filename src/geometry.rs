@@ -8,6 +8,7 @@ use assert_approx_eq::assert_approx_eq;
 use crate::utils::Interpolate;
 
 #[derive(Debug, Clone)]
+/// a 2d translation followed by a 2d rotation
 pub struct Transform2d {
     pub x_meters: f64,
     pub y_meters: f64,
@@ -73,7 +74,7 @@ impl Neg for Transform2d {
     type Output = Transform2d;
 
     fn neg(self) -> Transform2d {
-        Transform2d::ZERO + Transform2d::new(0.0, 0.0, -self.theta_radians) + Transform2d::new(-self.x_meters, -self.y_meters, 0.0)
+        Transform2d::new(0.0, 0.0, -self.theta_radians) + Transform2d::new(-self.x_meters, -self.y_meters, 0.0)
     }
 }
 
