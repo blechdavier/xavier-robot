@@ -19,6 +19,7 @@ use nokhwa::{nokhwa_initialize, utils::Resolution};
 use odometry::{DifferentialDriveOdometry, DifferentialDriveWheelPositions};
 use pose_estimator::PoseEstimator;
 use tokio_serial::SerialPortBuilderExt;
+use icp_2d::icp_least_squares;
 
 const DURATION_PER_FRAME: Duration = Duration::from_millis(10);
 
@@ -61,7 +62,11 @@ async fn main() {
         // dbg!(&drivetrain.desired_chassis_speeds);
         // drivetrain.write_outputs().await;
         if let Some(scan) = lidar.poll().await {
-            dbg!(scan.raycasts());
+            if lidar.scans.len() >= 2 {
+                let first_scan = lidar.scans[0].to_cartesian_points();
+                let most_recent_scan = lidar.get_most_recent_scan().unwrap().to_cartesian_points();
+                dbg!(icp_least_squares(&first_scan, &most_recent_scan, 50));
+            }
         }
 
         if let Some(i) = DURATION_PER_FRAME.checked_sub(prev_frame.elapsed()) {

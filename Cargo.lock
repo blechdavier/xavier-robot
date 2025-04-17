@@ -717,6 +717,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "icp_2d"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "01652096791775a5111f1669c7c81b1beb982b62c5b5845b98625e3c42078bd6"
+dependencies = [
+ "lstsq",
+ "nalgebra",
+]
+
+[[package]]
 name = "image"
 version = "0.25.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -908,6 +918,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fae87c125b03c1d2c0150c90365d7d6bcc53fb73a9acaef207d2d065860f062"
 dependencies = [
  "imgref",
+]
+
+[[package]]
+name = "lstsq"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d0767b5d1bcb5c7a99647520963706322bdabd5e5ba18530fd9c9c02ab04029e"
+dependencies = [
+ "nalgebra",
 ]
 
 [[package]]
@@ -2258,6 +2277,7 @@ dependencies = [
  "apriltag",
  "apriltag-image",
  "assert_approx_eq",
+ "icp_2d",
  "image",
  "nalgebra",
  "nalgebra-sparse",

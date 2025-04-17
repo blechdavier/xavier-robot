@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 apriltag = "0.4.0"
 assert_approx_eq = "1.1.0"
+icp_2d = "0.1.3"
 image = "0.25.5"
 nalgebra = "0.33.2"
 nalgebra-sparse = "0.10.0"
