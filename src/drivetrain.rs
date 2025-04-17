@@ -64,7 +64,7 @@ impl Drivetrain<DifferentialDriveWheelPositions> for XavierBotDrivetrain {
 impl XavierBotDrivetrain {
     pub async fn new(serial_path: &str) -> Self {
         let arduino = tokio_serial::new(serial_path, 115_200).timeout(Duration::from_millis(1000)).open_native_async().expect("Failed to open port");
-        arduino.clear(tokio_serial::ClearBuffer::All);
+        arduino.clear(tokio_serial::ClearBuffer::All).unwrap();
         Self { arduino, desired_chassis_speeds: Twist2d::ZERO, heading: 0.0, wheel_positions: DifferentialDriveWheelPositions::ZERO }
     }
 

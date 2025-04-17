@@ -139,7 +139,7 @@ fn test_twist_conversion() {
     assert_eq!(tf, tf2);
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Twist2d {
     pub dx: f64,
     pub dy: f64,
