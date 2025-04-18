@@ -35,6 +35,7 @@ use tokio_serial::SerialStream;
 
 use nalgebra::Vector2;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use serde::Serialize;
 
 pub struct LidarEngine {
     pub port: SerialStream,
@@ -96,7 +97,9 @@ impl LidarEngine {
             let scan_count = self.scans.len();
             let mut buffer = [0; 132];
             self.port.read_exact(&mut buffer).await.unwrap();
-            self.scan_packets.push(ScanPacket::from_buffer(&buffer));
+            if let Ok(packet) = ScanPacket::from_buffer(&buffer) {
+                self.scan_packets.push(packet);
+            }
             if self.scan_packets.len() > 1 {
                 for i in 0..32 {
                     let mut dist_q2 = [0; 3];
@@ -224,9 +227,16 @@ impl LidarPoint {
     pub fn to_cartesian(&self) -> Vector2<f64> {
         let angle = self.get_angle_rad_f64();
         Vector2::new(
-            self.distance_q0 as f64 * angle.cos(),
-            self.distance_q0 as f64 * angle.sin(),
+            self.distance_q0 as f64 * angle.cos() / 1000.0,
+            self.distance_q0 as f64 * angle.sin() / 1000.0,
         )
+    }
+    pub fn to_cartesian_ws(&self) -> [f64; 2] {
+        let angle = self.get_angle_rad_f64();
+        [
+            self.distance_q0 as f64 * angle.cos() / 1000.0,
+            self.distance_q0 as f64 * angle.sin() / 1000.0,
+        ]
     }
 }
 
@@ -238,16 +248,22 @@ pub struct ScanPacket {
 }
 
 impl ScanPacket {
-    fn from_buffer(bytes: &[u8; 132]) -> Self {
+    fn from_buffer(bytes: &[u8; 132]) -> Result<Self, ()> {
         let timestamp = Instant::now();
         let sync = (bytes[0] & 0xF0) | (bytes[1] >> 4);
-        assert_eq!(sync, 0xa5);
+        if sync!= 0xa5 {
+            println!("sync byte did not match with buffer {:x?}", bytes);
+            return Err(());
+        }
         let checksum = (bytes[0] & 0xF) | (bytes[1] << 4);
         let mut check_checksum = 0;
         for i in 2..bytes.len() {
             check_checksum ^= bytes[i];
         }
-        assert_eq!(checksum, check_checksum);
+        if check_checksum != checksum {
+            println!("checksum did not match");
+            return Err(());
+        }
         let start_bit = bytes[3] & 0b1000_0000 != 0;
         let start_angle_q6 = u16::from_le_bytes([bytes[2], bytes[3] & 0b0111_1111]);
 
@@ -261,12 +277,12 @@ impl ScanPacket {
             let cabin = u32::from_le_bytes(bytes[(4 + offset)..(8 + offset)].try_into().unwrap());
             ultra_cabins.push(cabin);
         }
-        ScanPacket {
+        Ok(ScanPacket {
             timestamp,
             start_bit,
             start_angle_q6,
             ultra_cabins: ultra_cabins.try_into().unwrap(),
-        }
+        })
     }
 
     fn get_start_angle_radians(&self) -> f32 {
@@ -286,6 +302,12 @@ impl LidarScan {
         self.points
             .iter()
             .map(|point| point.to_cartesian())
+            .collect()
+    }
+    pub fn to_cartesian_points_ws(&self) -> Vec<[f64; 2]> {
+        self.points
+            .iter()
+            .map(|point| point.to_cartesian_ws())
             .collect()
     }
     pub fn raycasts(&self) -> [u32; 8] {

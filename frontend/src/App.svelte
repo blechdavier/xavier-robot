@@ -1,10 +1,17 @@
 <script lang="ts">
     import { io } from "socket.io-client";
+    import { onMount } from 'svelte';
+
+	onMount(() => {
+    canvas.width = canvas.clientWidth;
+    canvas.height = canvas.clientHeight;
+	});
 
     let webSocketConnected: boolean = false;
     let lidarConnected: boolean = false;
   let arduinoConnected: boolean = false;
   let pointCount: number = -1;
+  let canvas: HTMLCanvasElement;
   
   const socket = io();
   socket.on("connect", () => {
@@ -23,8 +30,27 @@
   socket.on("lidarStatus", (status: boolean) => {
     lidarConnected = status;
   });
-  socket.on("pointCount", (c: number) => {
-    pointCount = c;
+  socket.on("pointCloud", (c: any) => {
+    console.log(c);
+    let ctx = canvas.getContext("2d");
+    if (ctx == null) {return;}
+    ctx.fillStyle = "black";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle = "red";
+    let center = [canvas.width / 2, canvas.height / 2]
+    console.log(center);
+    for (let i = 0; i < c.length; i++) {
+      let x = c[i][0] * 50 + center[0] - 2;
+      let y = c[i][1] * 50 + center[1] - 2;
+      // console.log(x);
+      // console.log(y);
+      ctx.fillRect(Math.round(x), Math.round(y), 4, 4);
+    }
+    ctx.arc(center[0], center[1], 0.127 * 50, 0, 2 * Math.PI);
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = "blue";
+    ctx.stroke();
+    pointCount = c.length;
   });
 
   let keys = new Set();
@@ -72,6 +98,6 @@
     <button type="button" class="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800">Pathfind to location</button>
   </div>
   <div class="flex-grow">
-    <canvas class="bg-black w-full h-screen"></canvas>
+    <canvas class="bg-black w-full h-screen" bind:this={canvas}></canvas>
   </div>
 </div>

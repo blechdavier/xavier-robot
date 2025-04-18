@@ -4,6 +4,7 @@ use nalgebra::{DMatrix, DVector, Matrix3, Vector3};
 use nalgebra_sparse::{factorization::CscCholesky, CooMatrix, CscMatrix};
 
 use crate::geometry::Transform2d;
+use crate::lidar::LidarScan;
 
 pub struct PoseGraphBackend {
     pub nodes: DVector<f64>,
@@ -125,4 +126,9 @@ fn test_optimize_pose_graph() {
     }
     pose_graph.optimize(10);
     assert!(pose_graph.nodes.relative_eq(&ground_truth, 1e-9, 1e-9));
+}
+
+struct PoseGraph {
+    backend: PoseGraphBackend,
+    node_scans: Vec<LidarScan>
 }
