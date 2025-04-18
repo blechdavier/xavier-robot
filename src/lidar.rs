@@ -97,8 +97,16 @@ impl LidarEngine {
             let scan_count = self.scans.len();
             let mut buffer = [0; 132];
             self.port.read_exact(&mut buffer).await.unwrap();
-            if let Ok(packet) = ScanPacket::from_buffer(&buffer) {
-                self.scan_packets.push(packet);
+            match ScanPacket::from_buffer(&buffer) {
+                Ok(packet) => self.scan_packets.push(packet),
+                Err(ScanPacketParseError::SyncByteMismatch) => {
+                    if self.port.bytes_to_read().unwrap() > 0 { // attempt to realign
+                        let mut buffer = [0; 1];
+                        self.port.read_exact(&mut buffer).await.unwrap();
+                    }
+                    return None;
+                }
+                Err(ScanPacketParseError::ChecksumMismatch) => return None
             }
             if self.scan_packets.len() > 1 {
                 for i in 0..32 {
@@ -247,13 +255,18 @@ pub struct ScanPacket {
     pub ultra_cabins: [u32; 32],
 }
 
+enum ScanPacketParseError {
+    SyncByteMismatch,
+    ChecksumMismatch
+}
+
 impl ScanPacket {
-    fn from_buffer(bytes: &[u8; 132]) -> Result<Self, ()> {
+    fn from_buffer(bytes: &[u8; 132]) -> Result<Self, ScanPacketParseError> {
         let timestamp = Instant::now();
         let sync = (bytes[0] & 0xF0) | (bytes[1] >> 4);
         if sync!= 0xa5 {
             println!("sync byte did not match with buffer {:x?}", bytes);
-            return Err(());
+            return Err(ScanPacketParseError::SyncByteMismatch);
         }
         let checksum = (bytes[0] & 0xF) | (bytes[1] << 4);
         let mut check_checksum = 0;
@@ -262,7 +275,7 @@ impl ScanPacket {
         }
         if check_checksum != checksum {
             println!("checksum did not match");
-            return Err(());
+            return Err(ScanPacketParseError::ChecksumMismatch);
         }
         let start_bit = bytes[3] & 0b1000_0000 != 0;
         let start_angle_q6 = u16::from_le_bytes([bytes[2], bytes[3] & 0b0111_1111]);

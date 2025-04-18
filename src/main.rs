@@ -84,7 +84,7 @@ async fn main() {
             if lidar.scans.len() >= 2 {
                 let second_scan = &lidar.scans[1];
                 let most_recent_scan = lidar.get_most_recent_scan().unwrap();
-                println!("{:.3}",icp_least_squares(&second_scan.to_cartesian_points(), &most_recent_scan.to_cartesian_points(), 10));
+                // println!("{:.3}",icp_least_squares(&second_scan.to_cartesian_points(), &most_recent_scan.to_cartesian_points(), 10));
                 io.broadcast().emit("pointCloud", &most_recent_scan.to_cartesian_points_ws()).await;
             }
         }
