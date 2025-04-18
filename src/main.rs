@@ -52,8 +52,8 @@ async fn main() {
     io.ns("/", handler);
 
     let app = axum::Router::new()
-        .route_service("/", ServeFile::new("/home/xavier/Documents/GitHub/xavier-robot/frontend/dist/index.html"))
-        .route_service("/{*wildcard}", ServeDir::new("/home/xavier/Documents/GitHub/xavier-robot/frontend/dist"))
+        .route_service("/", ServeFile::new("/home/blech/Documents/GitHub/xavier-robot/frontend/dist/index.html"))
+        .route_service("/{*wildcard}", ServeDir::new("/home/blech/Documents/GitHub/xavier-robot/frontend/dist"))
         .layer(layer);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();

@@ -42,12 +42,14 @@
     let vx = Number(keys.has("w")) - Number(keys.has("s"));
     let vy = 0.0;
     let omega = Number(keys.has("a")) - Number(keys.has("d"));
+    omega *= 5.0;
+    console.log([vx, vy, omega]);
     socket.emit("driveWithSpeeds", [vx, vy, omega]);
   }
 </script>
 
 <div class="flex flex-col sm:flex-row">
-  <div class="flex-grow flex flex-col p-4 bg-white dark:bg-slate-900">
+  <div class="flex flex-col p-4 bg-white dark:bg-slate-900">
     <h1 class="text-4xl font-extrabold leading-none tracking-tight mb-4 text-gray-900 md:text-5xl lg:text-6xl dark:text-white">Robot Interface</h1>
     {#if webSocketConnected}
       <span class="bg-green-100 text-green-800 text-xs mb-2 font-medium px-2.5 py-0.5 rounded-full dark:bg-green-900 dark:text-green-300">WebSocket connected</span>
@@ -69,5 +71,7 @@
     <button type="button" class="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800">Drive with WASD</button>
     <button type="button" class="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800">Pathfind to location</button>
   </div>
-  <canvas class="bg-black h-screen"></canvas>
+  <div class="flex-grow">
+    <canvas class="bg-black w-full h-screen"></canvas>
+  </div>
 </div>
