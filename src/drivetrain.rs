@@ -52,7 +52,7 @@ impl Drivetrain<DifferentialDriveWheelPositions> for XavierBotDrivetrain {
         if right_mps.abs() < 0.02 {
             right_mps = 0.0;
         }
-        dbg!(left_mps, right_mps);
+        // dbg!(left_mps, right_mps);
         let left_encoder_clicks_per_sec = (left_mps / XAVIERBOT_METERS_PER_ENCODER_CLICK) as f32;
         let right_encoder_clicks_per_sec = -(right_mps / XAVIERBOT_METERS_PER_ENCODER_CLICK) as f32;
         self.arduino.write(&[0]).await.unwrap(); // 0: send wheel velocities

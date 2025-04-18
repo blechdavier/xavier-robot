@@ -18,7 +18,6 @@ impl WebsocketState {
 pub async fn handler(socket: SocketRef, state: State<WebsocketState>) {
     println!("new connection from {}", socket.id);
     socket.on("driveWithSpeeds", move |socket: SocketRef, state: State<WebsocketState>, Data::<Vec<f64>>(data)| {
-        println!("setting spees to {:?}", data);
         *state.cmd_vel.lock().unwrap() = Some(Twist2d::new(data[0], data[1], data[2]));
     })
 }

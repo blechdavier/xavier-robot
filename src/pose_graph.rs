@@ -1,11 +1,15 @@
 use std::{f64::consts::PI, time::Instant};
 
-use nalgebra::{DMatrix, DVector, Matrix3, Vector3};
+use nalgebra::{DMatrix, DVector, Matrix3, Vector3, Vector2};
 use nalgebra_sparse::{factorization::CscCholesky, CooMatrix, CscMatrix};
 
+use serde::Serialize;
+
 use crate::geometry::Transform2d;
+use crate::icp::icp_least_squares;
 use crate::lidar::LidarScan;
 
+#[derive(Debug)]
 pub struct PoseGraphBackend {
     pub nodes: DVector<f64>,
     edges: Vec<PoseGraphEdge>,
@@ -107,6 +111,7 @@ impl PoseGraphBackend {
     }
 }
 
+#[derive(Debug)]
 struct PoseGraphEdge {
     i: usize,
     j: usize,
@@ -128,7 +133,28 @@ fn test_optimize_pose_graph() {
     assert!(pose_graph.nodes.relative_eq(&ground_truth, 1e-9, 1e-9));
 }
 
-struct PoseGraph {
-    backend: PoseGraphBackend,
-    node_scans: Vec<LidarScan>
+pub struct LidarPoseGraph {
+    pub backend: PoseGraphBackend,
+    pub node_scans: Vec<Vec<Vector2<f64>>>
+}
+
+impl LidarPoseGraph {
+    pub fn new() -> Self {
+        Self { backend: PoseGraphBackend::new(), node_scans: Vec::new() }
+    }
+    pub fn add_scan(&mut self, odom_prev_node_to_new: Transform2d, new_scan: Vec<Vector2<f64>>) {
+        if let Some(last_scan) = self.node_scans.last() {
+            let icp_result = icp_least_squares(&new_scan, &last_scan, Vector3::new(odom_prev_node_to_new.x_meters, odom_prev_node_to_new.y_meters, odom_prev_node_to_new.theta_radians), 50);
+            dbg!(&icp_result, odom_prev_node_to_new);
+            self.backend.add_node_with_odometry(Transform2d::new(icp_result[0], icp_result[1], icp_result[2]));
+        } else {
+            // we can trust odometry for the first node because there's no scan to match to
+            self.backend.add_node_with_odometry(odom_prev_node_to_new);
+        }
+        self.node_scans.push(new_scan);
+    }
+    // pub fn add_loop_closure(&mut self, i: usize, j: usize, i_to_j: Transform2d) {
+    //     self.backend.add_loop_closure
+    //     self.dirty = true;
+    // }
 }

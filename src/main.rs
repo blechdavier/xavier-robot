@@ -7,8 +7,9 @@ mod utils;
 mod drivetrain;
 mod lidar;
 mod ws;
+mod icp;
 
-use std::{f64::consts::PI, future::IntoFuture, thread, time::{Duration, Instant}};
+use std::{f64::consts::PI, future::IntoFuture, thread, time::{Instant}};
 
 use apriltag::TagParams;
 use cameras::AprilTagCamera;
@@ -17,12 +18,14 @@ use geometry::{Transform2d, Transform3d, Twist2d};
 use lidar::LidarEngine;
 use nalgebra::{Rotation3, Vector3};
 use nokhwa::{nokhwa_initialize, utils::Resolution};
-use odometry::{DifferentialDriveOdometry, DifferentialDriveWheelPositions};
+use odometry::{DifferentialDriveOdometry, DifferentialDriveWheelPositions, WheelOdometry};
 use pose_estimator::PoseEstimator;
+use pose_graph::LidarPoseGraph;
 use socketioxide::SocketIoBuilder;
 use tokio_serial::SerialPortBuilderExt;
-use icp_2d::icp_least_squares;
+use icp::icp_least_squares;
 use tower_http::services::{ServeDir, ServeFile};
+use tokio::time::{sleep, Duration};
 use ws::{handler, WebsocketState};
 
 const DURATION_PER_FRAME: Duration = Duration::from_millis(10);
@@ -37,12 +40,12 @@ async fn main() {
 
     let program_start = Instant::now();
     let mut lidar = LidarEngine::new(tokio_serial::new("/dev/ttyUSB0", 115_200).open_native_async().unwrap()).await;
-    // let mut drivetrain = XavierBotDrivetrain::new("/dev/ttyACM0").await;
-    // let odom = DifferentialDriveOdometry::new(XAVIERBOT_WHEEL_SEPARATION_METERS, 0.0, DifferentialDriveWheelPositions::ZERO);
-    // let mut pose_estimator = PoseEstimator::new(Transform2d::ZERO, odom, program_start.elapsed());
+    let mut drivetrain = XavierBotDrivetrain::new("/dev/ttyACM0").await;
+    let mut odom = DifferentialDriveOdometry::new(XAVIERBOT_WHEEL_SEPARATION_METERS, 0.0, DifferentialDriveWheelPositions::ZERO);
+    let mut pose_graph = LidarPoseGraph::new();
 
-    // drivetrain.reset_serial_odom_alignment().await;
-    // drivetrain.set_kp(0.6).await;
+    drivetrain.reset_serial_odom_alignment().await;
+    drivetrain.set_kp(0.6).await;
     
     let mut prev_frame = Instant::now();
 
@@ -57,36 +60,33 @@ async fn main() {
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     tokio::spawn(axum::serve(listener, app).into_future());
+    let mut prev_odom: Option<Transform2d> = None;
 
-    // drivetrain.reset_serial_odom_alignment().await;
+    drivetrain.reset_serial_odom_alignment().await;
 
     loop {
-        // drivetrain.update_inputs().await;
-        // pose_estimator.update_odometry(drivetrain.heading, &drivetrain.wheel_positions, program_start.elapsed());
-        // let world_to_robot = pose_estimator.sample_at(program_start.elapsed()).unwrap();
-        // dbg!(&world_to_robot);
-        // if let Ok(update) = cam.rx.try_recv() {
-        //     for tag_measurement in update.tags {
-        //         pose_estimator.add_vision_measurement(tag_measurement.world_to_robot.to_transform_2d(), update.timestamp, 0.02, 0.02, 0.3).unwrap();
-        //     }
-        // }
-        // let world_to_target = Transform2d::new(1.5, 0.1, 1.0);
-        // let robot_to_target = (-world_to_robot) + world_to_target;
-        // let error_twist: Twist2d = robot_to_target.into();
-        // drivetrain.desired_chassis_speeds = error_twist * 3.0;
-        // dbg!(&drivetrain.desired_chassis_speeds);
-        // if let Some(s) = &*state.cmd_vel.lock().unwrap() {
-        //     dbg!(&s);
-        //     drivetrain.desired_chassis_speeds = s.clone();
-        // }
-        // drivetrain.write_outputs().await;
+        drivetrain.update_inputs().await;
+        odom.update(drivetrain.heading, &drivetrain.wheel_positions);
+        if let Some(s) = &*state.cmd_vel.lock().unwrap() {
+            drivetrain.desired_chassis_speeds = s.clone();
+        }
+        drivetrain.write_outputs().await;
         if let Some(scan) = lidar.poll().await {
-            if lidar.scans.len() >= 2 {
-                let second_scan = &lidar.scans[1];
-                let most_recent_scan = lidar.get_most_recent_scan().unwrap();
-                // println!("{:.3}",icp_least_squares(&second_scan.to_cartesian_points(), &most_recent_scan.to_cartesian_points(), 10));
-                io.broadcast().emit("pointCloud", &most_recent_scan.to_cartesian_points_ws()).await;
+            if let Some(prev) = prev_odom.clone() {
+                let curr = odom.get_pose().clone();
+                let diff = -prev + curr.clone();
+                if diff.norm() > 0.1 || diff.theta_radians.abs() > 0.5 {
+                    println!("adding pose graph node with diff {:?}", &diff);
+                    pose_graph.add_scan(diff, scan.to_cartesian_points());
+                    prev_odom = Some(curr);
+                    io.broadcast().emit("poseGraphNodes", &pose_graph.backend.nodes.data.as_vec()).await.unwrap();
+                    io.broadcast().emit("newPoseGraphScan", &scan.to_cartesian_points_ws()).await.unwrap();
+                }
+            } else if scan.points.len() > 100 { // FIXME real solution
+                pose_graph.add_scan(Transform2d::ZERO, scan.to_cartesian_points());
+                prev_odom = Some(Transform2d::ZERO);
             }
+            io.broadcast().emit("pointCloud", &scan.to_cartesian_points_ws()).await.unwrap();
         }
 
         if let Some(i) = DURATION_PER_FRAME.checked_sub(prev_frame.elapsed()) {

@@ -25,6 +25,10 @@ impl Transform2d {
         };
     }
 
+    pub fn norm(&self) -> f64 {
+        self.x_meters.hypot(self.y_meters)
+    }
+
     pub const ZERO: Self = Transform2d::new(0.0, 0.0, 0.0);
 }
 
