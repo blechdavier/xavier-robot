@@ -4,10 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-apriltag = "0.4.0"
+# apriltag = "0.4.0"
 assert_approx_eq = "1.1.0"
 axum = "0.8.3"
-image = "0.25.5"
+# image = "0.25.5"
 lstsq = "0.6.0"
 nalgebra = "0.33.2"
 nalgebra-sparse = "0.10.0"
@@ -17,10 +17,10 @@ tokio = { version = "1.44.2", features = ["full"] }
 tokio-serial = "5.4.5"
 tower-http = { version = "0.6.2", features = ["fs"] }
 
-[dependencies.nokhwa]
-version = "0.10.0"
-features = ["input-native", "output-threaded"]
+# [dependencies.nokhwa]
+# version = "0.10.0"
+# features = ["input-native", "output-threaded"]
 
-[dependencies.apriltag-image]
-version = "0.1.0"
-path = "../apriltag-image"
+# [dependencies.apriltag-image]
+# version = "0.1.0"
+# path = "../apriltag-image"

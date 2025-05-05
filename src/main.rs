@@ -1,4 +1,3 @@
-mod cameras;
 mod odometry;
 mod geometry;
 mod pose_estimator;
@@ -9,15 +8,12 @@ mod lidar;
 mod ws;
 mod icp;
 
-use std::{f64::consts::PI, future::IntoFuture, thread, time::{Instant}};
+use std::{f64::consts::PI, future::IntoFuture, thread, time::Instant};
 
-use apriltag::TagParams;
-use cameras::AprilTagCamera;
 use drivetrain::{Drivetrain, XavierBotDrivetrain, XAVIERBOT_WHEEL_SEPARATION_METERS};
 use geometry::{Transform2d, Transform3d, Twist2d};
 use lidar::LidarEngine;
 use nalgebra::{Rotation3, Vector3};
-use nokhwa::{nokhwa_initialize, utils::Resolution};
 use odometry::{DifferentialDriveOdometry, DifferentialDriveWheelPositions, WheelOdometry};
 use pose_estimator::PoseEstimator;
 use pose_graph::LidarPoseGraph;
@@ -32,12 +28,6 @@ const DURATION_PER_FRAME: Duration = Duration::from_millis(10);
 
 #[tokio::main]
 async fn main() {
-    if cfg!(target_os = "macos") {
-        nokhwa_initialize(|granted| {
-            println!("User said {}", granted);
-        });
-    }
-
     let program_start = Instant::now();
     let mut lidar = LidarEngine::new(tokio_serial::new("/dev/ttyUSB0", 115_200).open_native_async().unwrap()).await;
     let mut drivetrain = XavierBotDrivetrain::new("/dev/ttyACM0").await;
