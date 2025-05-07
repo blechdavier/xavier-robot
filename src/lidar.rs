@@ -33,7 +33,7 @@ use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 use std::sync::{mpsc, Arc, RwLock};
 
-use tokio_serial::{available_ports, SerialPort, SerialPortBuilderExt, SerialPortType};
+use tokio_serial::{available_ports, Error, ErrorKind, SerialPort, SerialPortBuilderExt, SerialPortType};
 use tokio_serial::SerialStream;
 
 use nalgebra::Vector2;
@@ -53,7 +53,9 @@ pub fn start_lidar_thread() -> (Receiver<LidarScan>, Arc<RwLock<LidarStatus>>){
         loop {
             match lidar.poll().await {
                 Ok(Some(scan)) => {
-                    tx.send(scan.clone()).unwrap();
+                    if scan.points.len() > 10 { // sometimes it starts a scan and there are only like 2 points... we don't want to do scan matching w those fake scans
+                        tx.send(scan.clone()).unwrap();
+                    }
                     *lidar_status.write().unwrap() = LidarStatus::Healthy;
                 }
                 Ok(None) => {}
@@ -70,7 +72,7 @@ pub fn start_lidar_thread() -> (Receiver<LidarScan>, Arc<RwLock<LidarStatus>>){
     (rx, cloned)
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LidarStatus {
     Initializing,
     Healthy,
@@ -104,6 +106,10 @@ impl LidarEngine {
                     }
                     Err(e) => {
                         eprintln!("Error initializing LidarEngine: {}", e);
+                        if e.description == "Device or resource busy" {
+                            println!("Waiting 1000ms to attempt to fix this.");
+                            tokio::time::sleep(Duration::from_millis(1000)).await;
+                        }
                     }
                 }
             } else {
@@ -115,8 +121,7 @@ impl LidarEngine {
 
     async fn init(&mut self) {
         println!("Initializing Lidar");
-        let tries = 5; // TODO constant
-        'outer: for i in 0..tries {
+        'outer: loop {
             println!("Sending stop packet");
             LidarRequest::Stop.write(&mut self.port).await.unwrap();
             while self.port.bytes_to_write().unwrap() > 0 {} // FIXME could hang here
@@ -133,7 +138,8 @@ impl LidarEngine {
             let start_this_step = Instant::now();
             while self.port.bytes_to_read().unwrap() < 7 {
                 if start_this_step.elapsed() > Duration::from_millis(500) {
-                    println!("Packet ack took too long. Trying again.");
+                    println!("Packet ack took too long. Trying again. There are {} bytes to write.", self.port.bytes_to_write().unwrap());
+                    // self.port.write(&[0, 0, 0, 0, 0]).await.unwrap();
                     continue 'outer;
                 }
             }
@@ -145,10 +151,7 @@ impl LidarEngine {
                 break;
             } else {
                 dbg!(buf);
-                println!(
-                    "Lidar initialization failed, retrying {} more times",
-                    tries - i - 1
-                );
+                println!("Lidar initialization failed, retrying.");
             }
         }
     }
@@ -169,7 +172,7 @@ impl LidarEngine {
                     }
                     todo!()
                 }
-                Err(ScanPacketParseError::ChecksumMismatch) => todo!()
+                Err(ScanPacketParseError::ChecksumMismatch) => return Err(Error::new(tokio_serial::ErrorKind::Unknown, "checksum mismatch"))
             }
             if self.scan_packets.len() > 1 {
                 for i in 0..32 {

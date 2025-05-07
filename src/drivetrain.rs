@@ -1,4 +1,12 @@
-use std::{f64::consts::PI, thread, time::Duration};
+use std::{
+    f64::consts::PI,
+    sync::{
+        mpsc::{self, Receiver, Sender},
+        Arc, Mutex, RwLock,
+    },
+    thread,
+    time::Duration,
+};
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_serial::{SerialPort, SerialPortBuilderExt, SerialStream};
@@ -9,11 +17,57 @@ const XAVIERBOT_METERS_PER_ENCODER_CLICK: f64 = 2.0 * PI * (65.0 / 2.0 / 1000.0)
 pub const XAVIERBOT_WHEEL_SEPARATION_METERS: f64 = 0.2;
 const XAVIERBOT_MAX_SPEED_FEASIBLE: f64 = 0.5; // TODO real value
 
+pub fn start_drivetrain_thread() -> (
+    Arc<Mutex<Twist2d>>,
+    Arc<RwLock<f64>>,
+    Arc<RwLock<DifferentialDriveWheelPositions>>,
+    Arc<RwLock<DrivetrainStatus>>,
+) {
+    let desired_chassis_speeds = Arc::new(Mutex::new(Twist2d::ZERO));
+    let heading = Arc::new(RwLock::new(0.0));
+    let wheels = Arc::new(RwLock::new(DifferentialDriveWheelPositions::ZERO));
+    let status = Arc::new(RwLock::new(DrivetrainStatus::Initializing));
+
+    let cloned_speeds = desired_chassis_speeds.clone();
+    let cloned_heading = heading.clone();
+    let cloned_wheels = wheels.clone();
+    let cloned_status = status.clone();
+
+    tokio::spawn(async move {
+        let mut drivetrain = XavierBotDrivetrain::new("/dev/ttyACM0").await;
+        *status.write().unwrap() = DrivetrainStatus::Healthy;
+        loop {
+            drivetrain.update_inputs().await;
+            {
+                drivetrain.desired_chassis_speeds = desired_chassis_speeds.lock().unwrap().clone();
+            }
+            {
+                *heading.write().unwrap() = drivetrain.heading;
+            }
+            {
+                let mut wheels = wheels.write().unwrap();
+                wheels.left_wheel_meters = drivetrain.wheel_positions.left_wheel_meters;
+                wheels.right_wheel_meters = drivetrain.wheel_positions.right_wheel_meters;
+            }
+            drivetrain.write_outputs().await;
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    });
+    (cloned_speeds, cloned_heading, cloned_wheels, cloned_status)
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum DrivetrainStatus {
+    Initializing,
+    Healthy,
+    Disconnected,
+}
+
 pub struct XavierBotDrivetrain {
     arduino: SerialStream,
     pub desired_chassis_speeds: Twist2d,
     pub heading: f64,
-    pub wheel_positions: DifferentialDriveWheelPositions
+    pub wheel_positions: DifferentialDriveWheelPositions,
 }
 
 pub trait Drivetrain<T> {
@@ -31,14 +85,18 @@ impl Drivetrain<DifferentialDriveWheelPositions> for XavierBotDrivetrain {
             let left_encoder = i32::from_le_bytes(buf[0..4].try_into().unwrap());
             let right_encoder = i32::from_le_bytes(buf[4..8].try_into().unwrap());
             let yaw = f32::from_le_bytes(buf[8..12].try_into().unwrap());
-            self.wheel_positions.left_wheel_meters = left_encoder as f64 * XAVIERBOT_METERS_PER_ENCODER_CLICK;
-            self.wheel_positions.right_wheel_meters = -(right_encoder as f64) * XAVIERBOT_METERS_PER_ENCODER_CLICK;
+            self.wheel_positions.left_wheel_meters =
+                left_encoder as f64 * XAVIERBOT_METERS_PER_ENCODER_CLICK;
+            self.wheel_positions.right_wheel_meters =
+                -(right_encoder as f64) * XAVIERBOT_METERS_PER_ENCODER_CLICK;
             self.heading = -yaw as f64;
         }
     }
     async fn write_outputs(&mut self) {
-        let mut left_mps = self.desired_chassis_speeds.dx - XAVIERBOT_WHEEL_SEPARATION_METERS / 2.0 * self.desired_chassis_speeds.dtheta;
-        let mut right_mps = self.desired_chassis_speeds.dx + XAVIERBOT_WHEEL_SEPARATION_METERS / 2.0 * self.desired_chassis_speeds.dtheta;
+        let mut left_mps = self.desired_chassis_speeds.dx
+            - XAVIERBOT_WHEEL_SEPARATION_METERS / 2.0 * self.desired_chassis_speeds.dtheta;
+        let mut right_mps = self.desired_chassis_speeds.dx
+            + XAVIERBOT_WHEEL_SEPARATION_METERS / 2.0 * self.desired_chassis_speeds.dtheta;
 
         let norm: f64 = left_mps.abs().max(right_mps.abs()) / XAVIERBOT_MAX_SPEED_FEASIBLE;
         if norm > 1.0 {
@@ -56,22 +114,44 @@ impl Drivetrain<DifferentialDriveWheelPositions> for XavierBotDrivetrain {
         let left_encoder_clicks_per_sec = (left_mps / XAVIERBOT_METERS_PER_ENCODER_CLICK) as f32;
         let right_encoder_clicks_per_sec = -(right_mps / XAVIERBOT_METERS_PER_ENCODER_CLICK) as f32;
         self.arduino.write(&[0]).await.unwrap(); // 0: send wheel velocities
-        assert_eq!(self.arduino.write(&left_encoder_clicks_per_sec.to_le_bytes()).await.unwrap(), 4);
-        assert_eq!(self.arduino.write(&right_encoder_clicks_per_sec.to_le_bytes()).await.unwrap(), 4);
+        assert_eq!(
+            self.arduino
+                .write(&left_encoder_clicks_per_sec.to_le_bytes())
+                .await
+                .unwrap(),
+            4
+        );
+        assert_eq!(
+            self.arduino
+                .write(&right_encoder_clicks_per_sec.to_le_bytes())
+                .await
+                .unwrap(),
+            4
+        );
     }
 }
 
 impl XavierBotDrivetrain {
     pub async fn new(serial_path: &str) -> Self {
-        let arduino = tokio_serial::new(serial_path, 115_200).timeout(Duration::from_millis(1000)).open_native_async().expect("Failed to open port");
+        let arduino = tokio_serial::new(serial_path, 115_200)
+            .timeout(Duration::from_millis(1000))
+            .open_native_async()
+            .expect("Failed to open port");
         arduino.clear(tokio_serial::ClearBuffer::All).unwrap();
-        Self { arduino, desired_chassis_speeds: Twist2d::ZERO, heading: 0.0, wheel_positions: DifferentialDriveWheelPositions::ZERO }
+        Self {
+            arduino,
+            desired_chassis_speeds: Twist2d::ZERO,
+            heading: 0.0,
+            wheel_positions: DifferentialDriveWheelPositions::ZERO,
+        }
     }
 
     pub async fn reset_serial_odom_alignment(&mut self) {
         dbg!(self.arduino.write(&[2]).await.unwrap()); // 2: disable odometry sending
         thread::sleep(Duration::from_millis(250));
-        self.arduino.clear(tokio_serial::ClearBuffer::Input).unwrap();
+        self.arduino
+            .clear(tokio_serial::ClearBuffer::Input)
+            .unwrap();
         dbg!(self.arduino.write(&[1]).await.unwrap()); // 1: enable odometry sending
     }
 

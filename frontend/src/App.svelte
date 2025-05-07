@@ -36,13 +36,13 @@ onMount(() => {
     ctx.stroke(); // Render the path
     ctx.closePath();
 
-    // for (let i = 0; i < pointCloud.length; i++) {
-    //   let x = pointCloud[i][1] * -200 + center[0] - 1;
-    //   let y = pointCloud[i][0] * -200 + center[1] - 1;
-    //   // console.log(x);
-    //   // console.log(y);
-    //   ctx.fillRect(Math.round(x), Math.round(y), 2, 2);
-    // }
+    for (let i = 0; i < pointCloud.length; i++) {
+      let x = pointCloud[i][1] * -200 + center[0] - 1;
+      let y = pointCloud[i][0] * -200 + center[1] - 1;
+      // console.log(x);
+      // console.log(y);
+      ctx.fillRect(Math.round(x), Math.round(y), 2, 2);
+    }
     ctx.beginPath(); // Start a new path
     ctx.arc(center[0], center[1], 0.127 * 200, 0, 2 * Math.PI);
     ctx.strokeStyle = "blue";
