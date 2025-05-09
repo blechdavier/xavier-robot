@@ -11,6 +11,11 @@ onMount(() => {
     canvas.height = Math.round(canvas.clientHeight);
     center = [Math.round(canvas.width / 2), Math.round(canvas.height / 2)]
   })
+  canvas.addEventListener('click', function(event) {
+    const [x, y] = screenPointToWorldPoint(event.offsetX, event.offsetY);
+    console.log('Clicked at x: ' + x + ', y: ' + y);
+    socket.emit("pathfindToPosition", {x_meters: x, y_meters: y, theta_radians: 0});
+  });
   const ctx = canvas.getContext('2d');
   let frame: number;
 
@@ -25,6 +30,10 @@ onMount(() => {
 
   function worldPointToScreenPoint(x_meters: number, y_meters: number): [number, number] {
     return [y_meters * -PIXELS_PER_METER + center[0], x_meters * -PIXELS_PER_METER + center[1]];
+  }
+
+  function screenPointToWorldPoint(x_pixels: number, y_pixels: number): [number, number] {
+    return [-(y_pixels-center[1])/PIXELS_PER_METER, -(x_pixels-center[0])/PIXELS_PER_METER];
   }
 
   function drawBackground() {

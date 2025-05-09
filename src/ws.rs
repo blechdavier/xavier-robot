@@ -47,5 +47,8 @@ pub async fn handler(socket: SocketRef, state: State<WebsocketState>) {
     println!("new connection from {}", socket.id);
     socket.on("driveWithSpeeds", move |socket: SocketRef, state: State<WebsocketState>, Data::<Vec<f64>>(data)| {
         *state.cmd_vel.lock().unwrap() = DriveCommand::TeleopVelocity(Twist2d::new(data[0], data[1], data[2]));
-    })
+    });
+    socket.on("pathfindToPosition", move |socket: SocketRef, state: State<WebsocketState>, Data::<Transform2d>(data)| {
+        *state.cmd_vel.lock().unwrap() = DriveCommand::PathfindToPosition(data);
+    });
 }

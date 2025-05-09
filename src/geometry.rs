@@ -4,11 +4,11 @@ use std::{f64::consts::PI, fmt::Debug, ops::{Add, AddAssign, Mul, Neg}};
 use nalgebra::{Matrix3, Rotation3, Vector3};
 
 use assert_approx_eq::assert_approx_eq;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::utils::Interpolate;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 /// a 2d translation followed by a 2d rotation
 pub struct Transform2d {
     pub x_meters: f64,
