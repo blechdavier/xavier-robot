@@ -1,9 +1,10 @@
 use std::{future::IntoFuture, sync::{Arc, Mutex}};
 
+use serde::Serialize;
 use socketioxide::{extract::{Data, SocketRef, State}, SocketIo, SocketIoBuilder};
 use tower_http::services::{ServeDir, ServeFile};
 
-use crate::geometry::Twist2d;
+use crate::geometry::{Transform2d, Twist2d};
 
 pub async fn start_web_server_thread() -> (WebsocketState, SocketIo) {
     let state = WebsocketState::new();
@@ -20,20 +21,31 @@ pub async fn start_web_server_thread() -> (WebsocketState, SocketIo) {
     (state, io)
 }
 
+pub enum DriveCommand {
+    TeleopVelocity(Twist2d),
+    PathfindToPosition(Transform2d)
+}
+
+#[derive(Serialize)]
+pub struct WsPoseGraphNode {
+    pub tf: Transform2d,
+    pub scan: Vec<[f64; 2]>
+}
+
 #[derive(Clone)]
 pub struct WebsocketState {
-    pub cmd_vel: Arc<Mutex<Option<Twist2d>>>
+    pub cmd_vel: Arc<Mutex<DriveCommand>>
 }
 
 impl WebsocketState {
     pub fn new() -> Self {
-        Self { cmd_vel: Arc::new(Mutex::new(None)) }
+        Self { cmd_vel: Arc::new(Mutex::new(DriveCommand::TeleopVelocity(Twist2d::ZERO))) }
     }
 }
 
 pub async fn handler(socket: SocketRef, state: State<WebsocketState>) {
     println!("new connection from {}", socket.id);
     socket.on("driveWithSpeeds", move |socket: SocketRef, state: State<WebsocketState>, Data::<Vec<f64>>(data)| {
-        *state.cmd_vel.lock().unwrap() = Some(Twist2d::new(data[0], data[1], data[2]));
+        *state.cmd_vel.lock().unwrap() = DriveCommand::TeleopVelocity(Twist2d::new(data[0], data[1], data[2]));
     })
 }

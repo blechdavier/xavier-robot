@@ -8,9 +8,12 @@ mod lidar;
 mod ws;
 mod icp;
 
-use drivetrain::DrivetrainStatus;
-use lidar::LidarStatus;
+use drivetrain::XAVIERBOT_WHEEL_SEPARATION_METERS;
+use geometry::Transform2d;
+use odometry::{DifferentialDriveOdometry, WheelOdometry};
+use pose_graph::{LidarPoseGraph, PoseGraphUpdateResult};
 use tokio::time::{sleep, Instant, Duration};
+use ws::{DriveCommand, WsPoseGraphNode};
 const DURATION_PER_FRAME: Duration = Duration::from_millis(10);
 
 #[tokio::main]
@@ -18,16 +21,38 @@ async fn main() {
     let program_start = Instant::now();
 
     let (state, io) = ws::start_web_server_thread().await;
-    let (scan_rx, lidar_health) = lidar::start_lidar_thread();
-    let (commanded_speeds, heading, wheel_positions, drivetrain_health) = drivetrain::start_drivetrain_thread();
+    let (scan_rx, lidar_health) = lidar::start_lidar_thread(io.clone()).await;
+    let (commanded_speeds, heading, wheel_positions, drivetrain_health) = drivetrain::start_drivetrain_thread(io.clone()).await;
+
+    let mut odom = DifferentialDriveOdometry::new(XAVIERBOT_WHEEL_SEPARATION_METERS, heading.read().unwrap().clone(), wheel_positions.read().unwrap().clone());
+    let mut pose_graph = LidarPoseGraph::new();
 
     let mut prev_frame = program_start;
     loop {
-        if let Some(s) = &*state.cmd_vel.lock().unwrap() {
-            *commanded_speeds.lock().unwrap() = s.clone();
+        odom.update(*heading.read().unwrap(), &wheel_positions.read().unwrap());
+        io.broadcast().emit("odom", odom.get_pose()).await.unwrap();
+        // dbg!(*heading.read().unwrap(), &wheel_positions.read().unwrap(), odom.get_pose());
+        match &*state.cmd_vel.lock().unwrap() {
+            DriveCommand::TeleopVelocity(s) => *commanded_speeds.lock().unwrap() = s.clone(),
+            DriveCommand::PathfindToPosition(pos) => todo!()
         }
-        io.broadcast().emit("lidarStatus",&(*lidar_health.read().unwrap() == LidarStatus::Healthy)).await.unwrap();
-        io.broadcast().emit("arduinoStatus",&(*drivetrain_health.read().unwrap() == DrivetrainStatus::Healthy)).await.unwrap();
+        if let Ok(scan) = scan_rx.try_recv() {
+            let res = pose_graph.update(odom.get_pose().clone(), scan.to_cartesian_points());
+            match res {
+                PoseGraphUpdateResult::Added => io.broadcast().emit("poseGraphNode", &WsPoseGraphNode{tf:odom.get_pose().clone(), scan:scan.to_cartesian_points_ws()}).await.unwrap(),
+                PoseGraphUpdateResult::LoopClosed => io.broadcast().emit("poseGraph", &{
+                    let mut nodes = Vec::new();
+                    let coords = &pose_graph.backend.nodes;
+                    dbg!(coords.len() ,coords.len()/3);
+                    for i in 0..(coords.len()/3) {
+                        // scuffed
+                        nodes.push(WsPoseGraphNode{ tf: Transform2d::new(coords[3*i], coords[3*i+1], coords[3*i+2]), scan: pose_graph.node_scans[i].iter().map(|x| [x[0], x[1]]).collect::<Vec<_>>() });
+                    }
+                    nodes
+                }).await.unwrap(),
+                _=>{}
+            }
+        }
         if let Some(i) = DURATION_PER_FRAME.checked_sub(prev_frame.elapsed()) {
             sleep(i).await;
         } else {

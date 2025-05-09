@@ -13,7 +13,7 @@ pub trait WheelOdometry<WheelPositions> {
     );
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DifferentialDriveWheelPositions {
     pub left_wheel_meters: f64,
     pub right_wheel_meters: f64,

@@ -1,13 +1,11 @@
-use std::{f64::consts::PI, time::Instant};
+use std::f64::consts::PI;
 
 use nalgebra::{DMatrix, DVector, Matrix3, Vector3, Vector2};
-use nalgebra_sparse::{factorization::CscCholesky, CooMatrix, CscMatrix};
+use nalgebra_sparse::{factorization::CscCholesky, CscMatrix};
 
-use serde::Serialize;
 
 use crate::geometry::Transform2d;
 use crate::icp::icp_least_squares;
-use crate::lidar::LidarScan;
 
 #[derive(Debug)]
 pub struct PoseGraphBackend {
@@ -19,23 +17,31 @@ pub struct PoseGraphBackend {
 impl PoseGraphBackend {
     pub fn new() -> Self {
         Self {
-            nodes: DVector::zeros(3), // zeros for xyz of first node
+            nodes: DVector::zeros(0), // zeros for xyz of first node
             edges: Vec::new(),
             dirty: false
         }
     }
     pub fn add_node_with_odometry(&mut self, prev_node_to_new: Transform2d) {
-        self.edges.push(PoseGraphEdge {
-            i: self.nodes.len() / 3 - 1,
-            j: self.nodes.len() / 3,
-            i_to_j: prev_node_to_new.clone()
-        });
-        let world_to_prev = Transform2d::new(self.nodes[self.nodes.len() - 3], self.nodes[self.nodes.len() - 2], self.nodes[self.nodes.len() - 1]);
-        let world_to_new = world_to_prev + prev_node_to_new;
-        // TODO there has to be a better way than this :/
-        self.nodes = self.nodes.push(world_to_new.x_meters);
-        self.nodes = self.nodes.push(world_to_new.y_meters);
-        self.nodes = self.nodes.push(world_to_new.theta_radians);
+        if self.nodes.len() == 0 {
+            // this is the first node in the graph, just add the pose & dw about an edge :)
+            // TODO consider what happens when this is nonzero
+            self.nodes = self.nodes.push(prev_node_to_new.x_meters);
+            self.nodes = self.nodes.push(prev_node_to_new.y_meters);
+            self.nodes = self.nodes.push(prev_node_to_new.theta_radians);
+        } else {
+            self.edges.push(PoseGraphEdge {
+                i: self.nodes.len() / 3 - 1,
+                j: self.nodes.len() / 3,
+                i_to_j: prev_node_to_new.clone()
+            });
+            let world_to_prev = Transform2d::new(self.nodes[self.nodes.len() - 3], self.nodes[self.nodes.len() - 2], self.nodes[self.nodes.len() - 1]);
+            let world_to_new = world_to_prev + prev_node_to_new;
+            // TODO there has to be a better way than this :/
+            self.nodes = self.nodes.push(world_to_new.x_meters);
+            self.nodes = self.nodes.push(world_to_new.y_meters);
+            self.nodes = self.nodes.push(world_to_new.theta_radians);
+        }
     }
     pub fn add_loop_closure(&mut self, i: usize, j: usize, i_to_j: Transform2d) {
         self.edges.push(PoseGraphEdge { i, j, i_to_j });
@@ -135,26 +141,46 @@ fn test_optimize_pose_graph() {
 
 pub struct LidarPoseGraph {
     pub backend: PoseGraphBackend,
-    pub node_scans: Vec<Vec<Vector2<f64>>>
+    pub node_scans: Vec<Vec<Vector2<f64>>>,
+    world_to_prev_odom: Transform2d,
+    scans_since_loop_closure: u16
+}
+
+pub enum PoseGraphUpdateResult {
+    NotAdded,
+    Added,
+    LoopClosed
 }
 
 impl LidarPoseGraph {
     pub fn new() -> Self {
-        Self { backend: PoseGraphBackend::new(), node_scans: Vec::new() }
+        Self { backend: PoseGraphBackend::new(), node_scans: Vec::new(), world_to_prev_odom: Transform2d::ZERO, scans_since_loop_closure: 0 }
     }
-    pub fn add_scan(&mut self, odom_prev_node_to_new: Transform2d, new_scan: Vec<Vector2<f64>>) {
-        if let Some(last_scan) = self.node_scans.last() {
-            let icp_result = icp_least_squares(&new_scan, &last_scan, Vector3::new(odom_prev_node_to_new.x_meters, odom_prev_node_to_new.y_meters, odom_prev_node_to_new.theta_radians), 50);
-            dbg!(&icp_result, odom_prev_node_to_new);
-            self.backend.add_node_with_odometry(Transform2d::new(icp_result[0], icp_result[1], icp_result[2]));
+    pub fn update(&mut self, world_to_new_odom: Transform2d, new_scan: Vec<Vector2<f64>>) -> PoseGraphUpdateResult {
+        assert_eq!(self.node_scans.len(), self.backend.nodes.len() / 3);
+
+        let prev_odom_to_new_odom = -self.world_to_prev_odom.clone() + world_to_new_odom.clone();
+        if prev_odom_to_new_odom.norm() > 0.15 || prev_odom_to_new_odom.theta_radians.abs() > 0.5 {
+            self.add_scan(world_to_new_odom, new_scan);
+            PoseGraphUpdateResult::LoopClosed // FIXME
         } else {
-            // we can trust odometry for the first node because there's no scan to match to
-            self.backend.add_node_with_odometry(odom_prev_node_to_new);
+            PoseGraphUpdateResult::NotAdded
         }
-        self.node_scans.push(new_scan);
     }
-    // pub fn add_loop_closure(&mut self, i: usize, j: usize, i_to_j: Transform2d) {
-    //     self.backend.add_loop_closure
-    //     self.dirty = true;
-    // }
+    fn add_scan(&mut self, world_to_new_odom: Transform2d, new_scan: Vec<Vector2<f64>>) {
+        let prev_odom_to_new_odom = -self.world_to_prev_odom.clone() + world_to_new_odom.clone();
+        // if let Some(last_scan) = self.node_scans.last() {
+        //     let icp_result = icp_least_squares(&new_scan, &last_scan, Vector3::new(prev_odom_to_new_odom.x_meters, prev_odom_to_new_odom.y_meters, prev_odom_to_new_odom.theta_radians), 50);
+        //     let icp_result = Transform2d::new(icp_result[0], icp_result[1], (icp_result[2] + PI).rem_euclid(2.0*PI) - PI);
+        //     dbg!(&icp_result, prev_odom_to_new_odom);
+        //     self.backend.add_node_with_odometry(icp_result);
+        // } else {
+            // we can trust odometry for the first node because there's no scan to match to
+            self.backend.add_node_with_odometry(prev_odom_to_new_odom);
+        // }
+        self.world_to_prev_odom = world_to_new_odom;
+        self.node_scans.push(new_scan);
+        self.scans_since_loop_closure += 1;
+        assert_eq!(self.node_scans.len(), self.backend.nodes.len() / 3);
+    }
 }

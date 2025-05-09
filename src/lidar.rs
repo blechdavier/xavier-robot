@@ -33,6 +33,8 @@ use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 use std::sync::{mpsc, Arc, RwLock};
 
+use serde::Serialize;
+use socketioxide::SocketIo;
 use tokio_serial::{available_ports, Error, ErrorKind, SerialPort, SerialPortBuilderExt, SerialPortType};
 use tokio_serial::SerialStream;
 
@@ -43,9 +45,10 @@ use crate::geometry::Transform2d;
 
 const ROBOT_TO_LIDAR: Transform2d = Transform2d::new(-0.085, -0.01, PI / 2.0);
 
-pub fn start_lidar_thread() -> (Receiver<LidarScan>, Arc<RwLock<LidarStatus>>){
+pub async fn start_lidar_thread(io: SocketIo) -> (Receiver<LidarScan>, Arc<RwLock<LidarStatus>>){
     let (tx, rx) = mpsc::channel::<LidarScan>();
     let lidar_status = Arc::new(RwLock::new(LidarStatus::Initializing));
+    io.broadcast().emit("lidarStatus",&false).await.unwrap();
     let cloned = lidar_status.clone();
 
     tokio::spawn(async move {
@@ -57,11 +60,13 @@ pub fn start_lidar_thread() -> (Receiver<LidarScan>, Arc<RwLock<LidarStatus>>){
                         tx.send(scan.clone()).unwrap();
                     }
                     *lidar_status.write().unwrap() = LidarStatus::Healthy;
+                    io.broadcast().emit("lidarStatus",&true).await.unwrap();
                 }
                 Ok(None) => {}
                 Err(e) => {
                     eprintln!("Error in Lidar Thread: {:?}, {}", e.kind, e.description);
                     *lidar_status.write().unwrap() = LidarStatus::UnknownError;
+                    io.broadcast().emit("lidarStatus",&false).await.unwrap();
                     println!("Reinitializing Lidar");
                     lidar = LidarEngine::new().await;
                 }
@@ -388,7 +393,6 @@ impl LidarScan {
             .collect()
     }
 }
-
 // communications
 pub enum LidarRequest {
     Stop,
