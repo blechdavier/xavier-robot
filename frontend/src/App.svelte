@@ -22,6 +22,8 @@ onMount(() => {
   (function loop() {
     frame = requestAnimationFrame(loop);
     drawBackground();
+    drawTransform2d(pursuitPose);
+    drawPath();
     drawRobot();
     drawPoseGraph();
   })();
@@ -30,6 +32,10 @@ onMount(() => {
 
   function worldPointToScreenPoint(x_meters: number, y_meters: number): [number, number] {
     return [y_meters * -PIXELS_PER_METER + center[0], x_meters * -PIXELS_PER_METER + center[1]];
+  }
+
+  function tfToScreenPoint(tf: Transform2d): [number, number] {
+    return worldPointToScreenPoint(tf.x_meters, tf.y_meters);
   }
 
   function screenPointToWorldPoint(x_pixels: number, y_pixels: number): [number, number] {
@@ -49,6 +55,51 @@ onMount(() => {
     let yVectorHead = worldPointToScreenPoint(odom.x_meters - 0.2 * Math.sin(odom.theta_radians), odom.y_meters + 0.2 * Math.cos(odom.theta_radians));
     ctx.beginPath();
     ctx.arc(robotPos[0], robotPos[1], 0.127 * PIXELS_PER_METER, 0, 2 * Math.PI);
+    ctx.fillStyle = "#fff3";
+    ctx.strokeStyle = "white"
+    ctx.fill();
+    ctx.stroke();
+    ctx.closePath();
+    ctx.beginPath();
+    ctx.moveTo(robotPos[0], robotPos[1]);
+    ctx.lineTo(xVectorHead[0], xVectorHead[1]);
+    ctx.strokeStyle = "red";
+    ctx.stroke();
+    ctx.closePath();
+    ctx.beginPath();
+    ctx.moveTo(robotPos[0], robotPos[1]);
+    ctx.lineTo(yVectorHead[0], yVectorHead[1]);
+    ctx.strokeStyle = "lime";
+    ctx.stroke();
+    ctx.closePath();
+  }
+
+  function drawPath() {
+    if (!ctx || !activePath) return;
+    ctx.beginPath();
+    ctx.strokeStyle = "white"
+    if (activePath.length > 0) {
+      let firstWaypoint = tfToScreenPoint(activePath[0]);
+      ctx.moveTo(firstWaypoint[0], firstWaypoint[1]);
+    }
+    for (let waypoint of activePath) {
+      let coords = tfToScreenPoint(waypoint);
+      ctx.lineTo(coords[0], coords[1]);
+    }
+    ctx.stroke();
+    ctx.closePath();
+    for (let waypoint of activePath) {
+      drawTransform2d(waypoint);
+    }
+  }
+
+  function drawTransform2d(tf: Transform2d | undefined) {
+    if (!ctx || !tf) return;
+    let robotPos = worldPointToScreenPoint(tf.x_meters, tf.y_meters);
+    let xVectorHead = worldPointToScreenPoint(tf.x_meters + 0.1 * Math.cos(tf.theta_radians), tf.y_meters + 0.1 * Math.sin(tf.theta_radians));
+    let yVectorHead = worldPointToScreenPoint(tf.x_meters - 0.1 * Math.sin(tf.theta_radians), tf.y_meters + 0.1 * Math.cos(tf.theta_radians));
+    ctx.beginPath();
+    ctx.arc(robotPos[0], robotPos[1], 0.03 * PIXELS_PER_METER, 0, 2 * Math.PI);
     ctx.fillStyle = "#fff3";
     ctx.strokeStyle = "white"
     ctx.fill();
@@ -95,6 +146,8 @@ let webSocketConnected: boolean = false;
 let lidarConnected: boolean = false;
 let arduinoConnected: boolean = false;
 let odom: undefined | Transform2d = undefined;
+let pursuitPose: undefined | Transform2d = undefined;
+let activePath: undefined | Transform2d[] = undefined;
 let poseGraph: PoseGraphNode[] = [];
 
 type Transform2d = {x_meters: number, y_meters: number, theta_radians: number};
@@ -126,9 +179,14 @@ socket.on("odom", (new_odom: Transform2d) => {
 socket.on("poseGraphNode", (node: PoseGraphNode) => {
   poseGraph.push(node);
 });
-
 socket.on("poseGraph", (nodes: PoseGraphNode[]) => {
   poseGraph = nodes;
+});
+socket.on("pursuitPose", (pose: Transform2d) => {
+  pursuitPose = pose;
+});
+socket.on("path", (path: Transform2d[]) => {
+  activePath = path;
 });
 
 let keys = new Set();
@@ -143,6 +201,8 @@ document.addEventListener("keyup", (e)=> {
 })
 
 function sendCommandedSpeeds() {
+  pursuitPose = undefined;
+  activePath = undefined;
   let vx = Number(keys.has("w")) - Number(keys.has("s"));
   let vy = 0.0;
   let omega = Number(keys.has("a")) - Number(keys.has("d"));

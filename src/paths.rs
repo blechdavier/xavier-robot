@@ -7,21 +7,24 @@ pub struct Path {
 }
 
 impl Path {
-    pub fn pure_pursuit(&self, current_position: &Transform2d) -> Twist2d {
+    pub fn pure_pursuit(&self, current_position: &Transform2d) -> (Twist2d, Transform2d) {
         let curr_t = self.get_path_progress(current_position);
         let max_t = self.waypoints.len() as f64 - 1.0;
         let target_t = (curr_t + 0.1).min(max_t); // TODO look ahead a fixed distance instead of using path progress
         let target_pose = self.get_path_at_time(target_t);
-        let err = -current_position.clone() + target_pose;
-        if err.norm() > 0.02 {
+        let err = -current_position.clone() + target_pose.clone();
+        dbg!(&err);
+        let cmd_vel = if max_t - curr_t < 0.02 { // TODO consider adding a debouncer here
+            // we are already at the target position, we can now rotate to the desired angle.
+            Twist2d::new(0.2 * err.x_meters, 0.2 * err.y_meters, (10.0 * ((err.theta_radians + PI).rem_euclid(2.0*PI) - PI)).max(-1.0).min(1.0))
+        } else {
             // we have to drive to the target position
             let angle_err = (err.y_meters).atan2(err.x_meters);
-            let forward_vel = (1.0 - 10.0 * err.x_meters * err.x_meters).max(0.0);
-            Twist2d::new(forward_vel, 0.0, angle_err)
-        } else {
-            // we are already at the target position, we can now rotate to the desired angle.
-            Twist2d::new(0.0, 0.0, (err.theta_radians + PI).rem_euclid(2.0*PI) - PI)
-        }
+            dbg!(angle_err);
+            let forward_vel = (0.4 - 10.0 * angle_err * angle_err).max(0.0).min(0.2);
+            Twist2d::new(forward_vel, 0.0, (10.0 * angle_err).min(1.0).max(-1.0))
+        };
+        (cmd_vel, target_pose)
     }
 
     pub fn get_path_at_time(&self, t: f64) -> Transform2d {
@@ -54,6 +57,10 @@ impl Path {
                 res = i as f64 + t;
             }
         }
+        if res == -1.0 {
+            dbg!(&self.waypoints);
+        }
+        assert_ne!(res, -1.0);
         res
     }
     /// (t, dist) t=0.0 is at the start of the segment, t=1.0 is at the end, and t=0.5 is halfway in between. dist is the euclidean distance to the closest point on the line segment.

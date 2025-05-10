@@ -4,7 +4,7 @@ use serde::Serialize;
 use socketioxide::{extract::{Data, SocketRef, State}, SocketIo, SocketIoBuilder};
 use tower_http::services::{ServeDir, ServeFile};
 
-use crate::geometry::{Transform2d, Twist2d};
+use crate::{geometry::{Transform2d, Twist2d}, paths::Path};
 
 pub async fn start_web_server_thread() -> (WebsocketState, SocketIo) {
     let state = WebsocketState::new();
@@ -23,7 +23,8 @@ pub async fn start_web_server_thread() -> (WebsocketState, SocketIo) {
 
 pub enum DriveCommand {
     TeleopVelocity(Twist2d),
-    PathfindToPosition(Transform2d)
+    PathfindToPosition(Transform2d),
+    FollowPath(Path)
 }
 
 #[derive(Serialize)]

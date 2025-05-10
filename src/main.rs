@@ -29,28 +29,26 @@ async fn main() {
     let mut odom = DifferentialDriveOdometry::new(XAVIERBOT_WHEEL_SEPARATION_METERS, heading.read().unwrap().clone(), wheel_positions.read().unwrap().clone());
     let mut pose_graph = LidarPoseGraph::new();
 
-    let mut active_path: Option<Path> = None;
-
     let mut prev_frame = program_start;
     loop {
-        // odom.update(*heading.read().unwrap(), &wheel_positions.read().unwrap());
+        odom.update(*heading.read().unwrap(), &wheel_positions.read().unwrap());
         io.broadcast().emit("odom", odom.get_pose()).await.unwrap();
-        // dbg!(*heading.read().unwrap(), &wheel_positions.read().unwrap(), odom.get_pose());
-        match &*state.cmd_vel.lock().unwrap() {
+        dbg!(*heading.read().unwrap(), &wheel_positions.read().unwrap(), odom.get_pose());
+        let mut locked = state.cmd_vel.lock().unwrap();
+        match &*locked {
             DriveCommand::TeleopVelocity(s) => *commanded_speeds.lock().unwrap() = s.clone(),
             DriveCommand::PathfindToPosition(pos) => {
-                if let Some(path) = &active_path {
-                    // follow the path
-                    let pursuit_speeds = path.pure_pursuit(odom.get_pose());
-                    *commanded_speeds.lock().unwrap() = pursuit_speeds;
-                } else {
-                    // generate a path
-                    let mut new_path = Path { waypoints: Vec::new() };
-                    new_path.waypoints.push(odom.get_pose().clone());
-                    new_path.waypoints.push(Transform2d::new(1.0, 1.0, 1.0));
-                    new_path.waypoints.push(pos.clone());
-                    active_path = Some(new_path);
-                }
+                let mut new_path = Path { waypoints: Vec::new() };
+                new_path.waypoints.push(odom.get_pose().clone());
+                new_path.waypoints.push(Transform2d::new(0.2, 0.2, 1.0));
+                new_path.waypoints.push(pos.clone());
+                io.broadcast().emit("path", &new_path.waypoints).await.unwrap(); // FIXME don't hold the lock here
+                *locked = DriveCommand::FollowPath(new_path);
+            },
+            DriveCommand::FollowPath(path) => {
+                let (pursuit_speeds, goal_pose) = path.pure_pursuit(odom.get_pose());
+                io.broadcast().emit("pursuitPose", &goal_pose).await.unwrap();
+                *commanded_speeds.lock().unwrap() = pursuit_speeds;
             }
         }
         // if let Ok(scan) = scan_rx.try_recv() {
